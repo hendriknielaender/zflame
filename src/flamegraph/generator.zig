@@ -1,9 +1,9 @@
 const std = @import("std");
 
-const Generator = struct {
-    allocator: *std.mem.Allocator,
+pub const Generator = struct {
+    allocator: std.mem.Allocator,
 
-    pub fn init(allocator: *std.mem.Allocator) Generator {
+    pub fn init(allocator: std.mem.Allocator) Generator {
         _ = allocator;
         // Initialize flame graph generator
     }
