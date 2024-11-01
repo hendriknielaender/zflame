@@ -11,10 +11,21 @@ pub const Profiler = struct {
     }
 
     pub fn start(self: *Profiler, binaryPath: []const u8, binaryArgs: []const []const u8) !void {
-        _ = self;
-        _ = binaryPath;
         _ = binaryArgs;
-        // This is a base method, implementations will override this.
+        const tracer = "/usr/sbin/dtrace";
+        const args = [_][]const u8{ tracer, "-n", "profile-1001 /execname == '{your_binary}' && arg1/{ @[ustack()] = count(); }'", "-c", binaryPath };
+        // Combine binaryArgs into args
+
+        const process = try std.ChildProcess.exec(.{
+            .allocator = self.allocator,
+            .argv = args,
+            .env_map = null,
+            .cwd = null,
+        });
+        defer process.deinit();
+
+        const output = try process.outputStream().readAllAlloc(self.allocator, std.math.maxInt(usize));
+        std.debug.print("DTrace Output: {}\n", .{output});
     }
 
     pub fn stop(self: *Profiler) !void {
