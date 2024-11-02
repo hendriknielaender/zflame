@@ -1,11 +1,17 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const parser = @import("flamegraph/parser.zig");
+const perf_parser = @import("flamegraph/parser/perf_parser.zig");
+// const dtrace_parser = @import("dtrace_parser.zig");
+
 /// Configuration options for zflame.
 const Config = struct {
     /// Input file path. Defaults to standard input ("-").
     input_file: []const u8 = "-",
     /// Output file path. Defaults to standard output ("-").
     output_file: []const u8 = "-",
+    /// Input format (e.g., perf, dtrace, etc.).
+    input_format: []const u8 = "perf",
     /// Width of the generated SVG image.
     image_width: u32 = 1200,
     /// Height of each frame in the flame graph.
@@ -46,15 +52,28 @@ pub fn main() !void {
     assert(config.frame_height > 0);
     assert(config.font_size > 0);
 
-    std.debug.print("Input file: {s}", .{config.input_file});
+    std.debug.print("Input file: {s}\n", .{config.input_file});
+    std.debug.print("Input format: {s}\n", .{config.input_format});
 
     const input_data = try readInput(&allocator, config.input_file);
     defer allocator.free(input_data);
 
-    const traces = try parseInputData(&allocator, input_data);
-    defer freeTraces(&allocator, traces);
+    var collapsed_stacks: []parser = undefined;
 
-    var root_frame = try buildFlameGraph(&allocator, traces);
+    // Select the appropriate parser based on input_format.
+    if (std.mem.eql(u8, config.input_format, "perf")) {
+        const perf = perf_parser.PerfParser{};
+        collapsed_stacks = try perf.parse(&allocator, input_data);
+        // } else if (std.mem.eql(u8, config.input_format, "dtrace")) {
+        //     const dtrace = dtrace_parser.DTraceParser{};
+        //     collapsed_stacks = try dtrace.parse(&allocator, input_data);
+    } else {
+        return error.UnsupportedFormat;
+    }
+
+    defer freeTraces(&allocator, collapsed_stacks);
+
+    var root_frame = try buildFlameGraph(&allocator, collapsed_stacks);
 
     try generateSVG(&allocator, &root_frame, config);
 
@@ -103,6 +122,10 @@ fn parseArgs(args: [][]const u8) !Config {
             i += 1;
             if (i >= args.len) return error.InvalidArguments;
             config.input_file = args[i];
+        } else if (std.mem.eql(u8, arg, "--format")) {
+            i += 1;
+            if (i >= args.len) return error.InvalidArguments;
+            config.input_format = args[i];
         } else {
             // Treat as input file if not already set.
             if (std.mem.eql(u8, config.input_file, "-")) {
@@ -182,7 +205,13 @@ fn parseInputData(
 }
 
 /// Frees the allocated traces.
-fn freeTraces(allocator: *std.mem.Allocator, traces: []const []const u8) void {
+fn freeTraces(allocator: *std.mem.Allocator, traces: []parser.CollapsedStack) void {
+    for (traces) |trace| {
+        // If `stack` was duplicated, ensure to free it.
+        if (trace.stack != null and trace.stack[0] != 0) {
+            allocator.free(trace.stack);
+        }
+    }
     allocator.free(traces);
 }
 
