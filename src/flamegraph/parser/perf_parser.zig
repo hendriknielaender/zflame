@@ -1,35 +1,31 @@
-// perf_parser.zig
 const std = @import("std");
+const assert = std.debug.assert;
 const parser = @import("../parser.zig");
 const stackcollapse = @import("../../stackcollapse.zig");
 
-/// Configuration options specific to the perf parser.
-pub const PerfParserConfig = struct {
-    include_pname: bool = true,
-    include_pid: bool = false,
-    include_tid: bool = false,
-    include_addrs: bool = false,
-    tidy_generic: bool = true,
-};
-
-/// Represents a `perf` parser.
 pub const PerfParser = struct {
-    config: PerfParserConfig,
+    config: stackcollapse.PerfParserConfig,
 
-    /// Implements the `parse` function for `perf` input.
-    pub fn parse(
-        self: *PerfParser,
-        allocator: *std.mem.Allocator,
-        input_data: []const u8,
-    ) ![]parser.CollapsedStack {
-        // Implement the perf parsing logic here.
-        // This can be similar to the previously provided `stackcollapse-perf.pl` port.
-        // For brevity, assume we have a function `collapsePerfStacks` defined elsewhere.
-        return stackcollapse.collapsePerfStacks(allocator, input_data, self.config);
+    pub fn init() PerfParser {
+        return PerfParser{
+            .config = stackcollapse.PerfParserConfig.init_default(),
+        };
     }
 
-    /// Returns the name of the parser.
-    pub fn name() []const u8 {
+    pub fn parse_to_buffer(
+        self: *const PerfParser,
+        allocator: *std.mem.Allocator,
+        input_data: []const u8,
+        output_buffer: []parser.CollapsedStack,
+    ) ![]parser.CollapsedStack {
+        assert(input_data.len > 0);
+        assert(output_buffer.len > 0);
+        self.config.validate();
+        
+        return stackcollapse.collapse_perf_stacks_to_buffer(allocator, input_data, self.config, output_buffer);
+    }
+
+    pub fn get_parser_name(_: *const PerfParser) []const u8 {
         return "perf";
     }
 };

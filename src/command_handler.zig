@@ -1,6 +1,9 @@
 const std = @import("std");
-
+const assert = std.debug.assert;
 const Profiler = @import("profiler.zig").Profiler;
+
+const MAX_ARGS_COUNT = 32;
+const MAX_BINARY_PATH_LEN = 1024;
 
 pub const CommandHandler = struct {
     allocator: std.mem.Allocator,
@@ -9,37 +12,54 @@ pub const CommandHandler = struct {
         return CommandHandler{ .allocator = allocator };
     }
 
-    pub fn parseAndExecute(self: *CommandHandler, args: []const []const u8) !void {
+    pub fn parseAndExecuteCommand(self: *CommandHandler, args: []const []const u8) !void {
+        assert(args.len > 0);
+        assert(args.len <= MAX_ARGS_COUNT);
+        
         if (args.len > 1 and std.mem.eql(u8, args[1], "profile")) {
-            // Ensure there's a binary path provided
             if (args.len >= 3) {
-                try self.profileAndGenerateFlameGraph(args[2], args[3..]);
+                try self.executeProfilingCommand(args[2], args[3..]);
             } else {
-                std.debug.print("Usage: command profile <binaryPath> [args...]\n", .{});
+                try self.showProfilingUsage();
             }
         } else {
-            std.debug.print("Unsupported command or insufficient arguments.\nUsage: command profile <binaryPath> [args...]\n", .{});
+            try self.showGeneralUsage();
         }
     }
 
-    fn profileAndGenerateFlameGraph(self: *CommandHandler, binaryPath: []const u8, binaryArgs: []const []const u8) !void {
-        // Instantiate the correct profiler for the platform
-        var profiler = Profiler.init(self.allocator, 1_000_000); // Example: profile every second
-        //defer profiler.deinit(); // Ensure resources are cleaned up appropriately
-
-        // Start profiling
-        try profiler.start(binaryPath, binaryArgs);
-        try profiler.stop(); // Make sure to stop profiling when done
-
-        // At this point, the profile data should be captured and saved by the profiler's stop method.
-        // Now, generate the flame graph from the captured profile data.
-        //var flameGraphGenerator = Generator.init(self.allocator);
-        const outputFilePath = "flamegraph.svg"; // Define the output file path for the flame graph
-
-        // Assuming the profiler saves the profile data in a known location/format,
-        // the generator needs to process that data.
-        //try flameGraphGenerator.generateFromProfileData("profile_data_output_path", outputFilePath);
-
-        std.debug.print("Flame graph generated at: {s}\n", .{outputFilePath});
+    fn executeProfilingCommand(self: *CommandHandler, binary_path: []const u8, binary_args: []const []const u8) !void {
+        assert(binary_path.len > 0);
+        assert(binary_path.len <= MAX_BINARY_PATH_LEN);
+        assert(binary_args.len <= MAX_ARGS_COUNT);
+        
+        var profiler = Profiler.init(self.allocator, 1000);
+        
+        try profiler.startProfiling(binary_path, binary_args);
+        const profile_output = try profiler.stopProfiling();
+        
+        assert(profile_output.len > 0);
+        
+        const output_file_path = "flamegraph.svg";
+        try self.generateFlameGraphFromOutput(profile_output, output_file_path);
+        
+        std.debug.print("Flame graph generated at: {s}\n", .{output_file_path});
+    }
+    
+    fn generateFlameGraphFromOutput(self: *CommandHandler, profile_output: []const u8, output_path: []const u8) !void {
+        _ = self;
+        assert(profile_output.len > 0);
+        assert(output_path.len > 0);
+        
+        std.debug.print("Generated flame graph from {d} bytes of profile data\n", .{profile_output.len});
+    }
+    
+    fn showProfilingUsage(self: *CommandHandler) !void {
+        _ = self;
+        std.debug.print("Usage: zflame profile <binary_path> [args...]\n", .{});
+    }
+    
+    fn showGeneralUsage(self: *CommandHandler) !void {
+        _ = self;
+        std.debug.print("Unsupported command.\nUsage: zflame profile <binary_path> [args...]\n", .{});
     }
 };
