@@ -1,47 +1,88 @@
 const std = @import("std");
-const os = std.os;
+const assert = std.debug.assert;
 
-// Profiler Interface
+const MAX_BINARY_PATH_LEN = 1024;
+const MAX_ARGS_COUNT = 32;
+const MAX_OUTPUT_SIZE_BYTES = 10 * 1024 * 1024;
+
 pub const Profiler = struct {
     allocator: std.mem.Allocator,
-    sampling_interval_ms: u64, // Duration in milliseconds
+    sampling_period_ms: u64,
+    output_buffer: [MAX_OUTPUT_SIZE_BYTES]u8,
+    output_len: usize,
 
-    pub fn init(allocator: std.mem.Allocator, sampling_interval_ms: u64) Profiler {
-        return Profiler{ .allocator = allocator, .sampling_interval_ms = sampling_interval_ms };
+    pub fn init(allocator: std.mem.Allocator, sampling_period_ms: u64) Profiler {
+        assert(sampling_period_ms > 0);
+        assert(sampling_period_ms <= 10000);
+        
+        return Profiler{ 
+            .allocator = allocator, 
+            .sampling_period_ms = sampling_period_ms,
+            .output_buffer = std.mem.zeroes([MAX_OUTPUT_SIZE_BYTES]u8),
+            .output_len = 0,
+        };
+    }
+    
+    fn validate(self: *const Profiler) void {
+        assert(self.sampling_period_ms > 0);
+        assert(self.sampling_period_ms <= 10000);
+        assert(self.output_len <= MAX_OUTPUT_SIZE_BYTES);
     }
 
-    pub fn start(self: *Profiler, binaryPath: []const u8, binaryArgs: []const []const u8) !void {
-        _ = binaryArgs;
-        const tracer = "/usr/sbin/dtrace";
-        const args = [_][]const u8{ tracer, "-n", "profile-1001 /execname == '{your_binary}' && arg1/{ @[ustack()] = count(); }'", "-c", binaryPath };
-        // Combine binaryArgs into args
-
-        const process = try std.ChildProcess.exec(.{
+    pub fn start_profiling(self: *Profiler, binary_path: []const u8, binary_args: []const []const u8) !void {
+        assert(binary_path.len > 0);
+        assert(binary_path.len <= MAX_BINARY_PATH_LEN);
+        assert(binary_args.len <= MAX_ARGS_COUNT);
+        self.validate();
+        
+        const frequency_hz = 1000 / self.sampling_period_ms;
+        assert(frequency_hz > 0);
+        assert(frequency_hz <= 1000);
+        
+        try self.execute_dtrace_command(binary_path, binary_args, frequency_hz);
+    }
+    
+    fn execute_dtrace_command(self: *Profiler, binary_path: []const u8, binary_args: []const []const u8, frequency_hz: u64) !void {
+        _ = binary_args;
+        assert(binary_path.len > 0);
+        assert(frequency_hz > 0);
+        
+        var dtrace_script_buffer: [1024]u8 = undefined;
+        const dtrace_script = try std.fmt.bufPrint(&dtrace_script_buffer, 
+            "profile-{d}hz /execname == \"{s}\"/ {{ @[ustack(100)] = count(); }}", 
+            .{ frequency_hz, binary_path });
+        
+        const args = [_][]const u8{ "/usr/sbin/dtrace", "-q", "-n", dtrace_script };
+        
+        const result = try std.ChildProcess.exec(.{
             .allocator = self.allocator,
-            .argv = args,
-            .env_map = null,
-            .cwd = null,
+            .argv = &args,
         });
-        defer process.deinit();
-
-        const output = try process.outputStream().readAllAlloc(self.allocator, std.math.maxInt(usize));
-        std.debug.print("DTrace Output: {}\n", .{output});
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+        
+        if (result.stdout.len > MAX_OUTPUT_SIZE_BYTES) {
+            return error.OutputTooLarge;
+        }
+        
+        @memcpy(self.output_buffer[0..result.stdout.len], result.stdout);
+        self.output_len = result.stdout.len;
     }
 
-    pub fn stop(self: *Profiler) !void {
+    pub fn stop_profiling(self: *Profiler) ![]const u8 {
+        self.validate();
+        assert(self.output_len > 0);
+        return self.output_buffer[0..self.output_len];
+    }
+
+    fn capture_stack_trace(self: *Profiler) !void {
         _ = self;
-        // Stop the profiling session and process the data
     }
-
-    fn captureStackTrace(self: *Profiler) !void {
-        _ = self;
-        // Platform-specific stack trace capture
-    }
-
-    fn resolveSymbols(self: *Profiler, addresses: []const usize) ![]const u8 {
+    
+    fn resolve_symbols(self: *Profiler, addresses: []const usize) ![]const u8 {
         _ = addresses;
         _ = self;
-        // Resolve symbols from addresses
+        return "";
     }
 };
 
@@ -55,10 +96,10 @@ const LinuxProfiler = struct {
         return LinuxProfiler{ .base = base };
     }
 
-    pub fn start(self: *LinuxProfiler, binaryPath: []const u8, binaryArgs: [][]const u8) !void {
+    pub fn start(self: *LinuxProfiler, binary_path: []const u8, binary_args: [][]const u8) !void {
         _ = self;
-        _ = binaryPath;
-        _ = binaryArgs;
+        _ = binary_path;
+        _ = binary_args;
         // Here goes the Linux-specific profiling start logic.
     }
 
@@ -74,15 +115,15 @@ const MacProfiler = struct {
         return MacProfiler{ .base = base };
     }
 
-    pub fn start(self: *MacProfiler, binaryPath: []const u8, binaryArgs: [][]const u8) !void {
-        _ = binaryArgs;
-        const dtraceScript = std.fmt.allocPrint(self.base.allocator, "profile-{}hz /execname == \"{s}\"/ {{ @[ustack(100)] = count(); }}", .{ std.time.millisecondsToHz(self.base.sampling_interval_ms), binaryPath }) catch |err| {
+    pub fn start(self: *MacProfiler, binary_path: []const u8, binary_args: [][]const u8) !void {
+        _ = binary_args;
+        const dtrace_script = std.fmt.allocPrint(self.base.allocator, "profile-{}hz /execname == \"{s}\"/ {{ @[ustack(100)] = count(); }}", .{ std.time.millisecondsToHz(self.base.sampling_interval_ms), binary_path }) catch |err| {
             std.debug.print("Failed to create DTrace script: {}\n", .{err});
             return;
         };
 
         // Setup DTrace command
-        var args = [_][]const u8{ "dtrace", "-q", "-n", dtraceScript, "-o", "dtrace_output.txt" };
+        var args = [_][]const u8{ "dtrace", "-q", "-n", dtrace_script, "-o", "dtrace_output.txt" };
         self.dtrace_process = os.Command.spawn(&args) catch |err| {
             std.debug.print("Failed to start DTrace process: {}\n", .{err});
             return;

@@ -1,17 +1,24 @@
-// parser.zig
 const std = @import("std");
+const assert = std.debug.assert;
 
-/// Represents a standardized collapsed stack with its associated count.
 pub const CollapsedStack = struct {
     stack: []const u8,
     count: u64,
+    
+    pub fn validate(self: CollapsedStack) void {
+        assert(self.stack.len > 0);
+        assert(self.stack.len <= 4096);
+        assert(self.count > 0);
+        assert(self.count <= 1000000000);
+    }
 };
 
-/// Parser interface.
 pub const Parser = struct {
-    /// Parses raw input data and returns an array of collapsed stacks.
-    parse: fn (allocator: *std.mem.Allocator, input_data: []const u8) []CollapsedStack,
-
-    /// Returns the name of the parser.
-    name: fn () []const u8,
+    parse_to_buffer: *const fn (allocator: *std.mem.Allocator, input_data: []const u8, output_buffer: []CollapsedStack) []CollapsedStack,
+    get_parser_name: *const fn () []const u8,
+    
+    fn validate(self: Parser) void {
+        assert(self.parse_to_buffer != null);
+        assert(self.get_parser_name != null);
+    }
 };
