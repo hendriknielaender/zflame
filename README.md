@@ -5,7 +5,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/hendriknielaender/zflame/blob/HEAD/CONTRIBUTING.md)
 <img src="logo.png" alt="zflame logo" align="right" width="20%"/>
 
-A high-performance, zero-allocation flamegraph generator written in Zig. This project is a port of [Jon Gjengset's](https://github.com/jonhoo) excellent [inferno](https://github.com/jonhoo/inferno/) flamegraph tool, reimplemented with Zig's performance and safety guarantees.
+zflame is a cutting-edge flamegraph profiling tool designed for the Zig programming language, aimed at simplifying performance analysis and optimization. By leveraging Zig's low-level capabilities, `zflame` provides detailed, interactive flamegraphs that help developers identify and address performance bottlenecks in their applications.
 
 ## Features
 
