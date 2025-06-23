@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<trace-query-result>
+<node>
+  <row>
+    <backtrace id="10">
+      <frame id="11" name="main" addr="0x102af5fa0"></frame>
+      <frame id="12" name="worker_func" addr="0x102af5d99"></frame>
+      <frame id="13" name="inner_func" addr="0x102af5c88"></frame>
+    </backtrace>
+  </row>
+  <row>
+    <backtrace id="20">
+      <frame id="21" name="main" addr="0x102af5fa0"></frame>
+      <frame id="22" name="helper_func" addr="0x102af5e77"></frame>
+    </backtrace>
+  </row>
+</node>
+</trace-query-result>

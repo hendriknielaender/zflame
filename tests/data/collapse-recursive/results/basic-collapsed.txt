@@ -1,0 +1,4 @@
+main;recursive;helper 1
+main;worker;inner 5
+main;func;other 3
+single_func 2

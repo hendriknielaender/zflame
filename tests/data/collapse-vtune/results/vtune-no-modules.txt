@@ -1,0 +1,3 @@
+main;worker_func;inner_func 200
+main;another_func 100
+helper_main 150

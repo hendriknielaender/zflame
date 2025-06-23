@@ -1,0 +1,3 @@
+myapp`main;myapp`worker_func;myapp`inner_func 200
+myapp`main;myapp`another_func 100
+libhelper`helper_main 150
