@@ -1,0 +1,6 @@
+Function Stack,CPU Time:Self,Module
+main,0.500,myapp
+ worker_func,0.300,myapp
+  inner_func,0.200,myapp
+ another_func,0.100,myapp
+helper_main,0.150,libhelper
