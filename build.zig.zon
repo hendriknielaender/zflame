@@ -4,10 +4,7 @@
     .fingerprint = 0xd8676478bee91c05,
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
-        .zbench = .{
-            .url = "https://github.com/hendriknielaender/zBench/archive/refs/heads/main.tar.gz",
-            .hash = "zbench-0.10.0-YTdc714iAQDO4lTHMnIljYHPZ5v_sNTsw75vAmO1pyT-",
-        },
+        .zbench = .{ .url = "https://github.com/hendriknielaender/zBench/archive/refs/heads/main.tar.gz", .hash = "zbench-0.11.1-YTdc7zgmAQDtDcHPFwsLeawui27WjMLWmUwrfz7pIlB2" },
     },
     .paths = .{
         "",
