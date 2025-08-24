@@ -92,15 +92,21 @@ fn process_differential_generation(allocator: std.mem.Allocator, config: Config)
         const output_file = try std.fs.cwd().createFile(output_path, .{});
         defer output_file.close();
 
+        var output_file_buffer: [8192]u8 = undefined;
+        var output_file_writer = output_file.writer(&output_file_buffer);
+        const output_writer = &output_file_writer.interface;
         try generator.from_files(
             config.before_file,
             config.after_file,
-            output_file.writer(),
+            output_writer,
         );
+        try output_writer.flush();
 
         std.debug.print("Differential data generated: {s}\n", .{output_path});
     } else {
-        const stdout = std.io.getStdOut().writer();
+        var stdout_buffer: [4096]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
         try generator.from_files(
             config.before_file,
             config.after_file,
@@ -172,7 +178,9 @@ fn consume_string_flag(args: [][]const u8, current_index: *usize) AllErrors![]co
 }
 
 fn show_help() !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
     const usage =
         \\ USAGE: diff-folded [options] before.folded after.folded
         \\ 
@@ -195,6 +203,7 @@ fn show_help() !void {
         \\
     ;
     try stdout.print(usage, .{});
+    try stdout.flush();
 }
 
 // Tests

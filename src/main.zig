@@ -32,7 +32,7 @@ const FlameGraphError = error{
     StreamTooLong,
 };
 
-const AllErrors = FlameGraphError || std.fs.File.OpenError || std.fs.File.WriteError || std.fs.File.ReadError || std.fmt.ParseIntError || std.io.FixedBufferStream([]const u8).Reader.Error || error{ InvalidData, OutOfMemory, TooManyChildren };
+const AllErrors = FlameGraphError || std.fs.File.OpenError || std.fs.File.WriteError || std.fs.File.ReadError || std.fmt.ParseIntError || std.io.FixedBufferStream([]const u8).Reader.Error || error{ InvalidData, OutOfMemory, TooManyChildren, WriteFailed, ReadFailed, EndOfStream };
 
 const Config = struct {
     input_file_path: []const u8,
@@ -92,16 +92,22 @@ pub fn main() !void {
     if (args.len == 1) {
         // No arguments - use stdin/stdout defaults
         execute_flame_graph_generation(&[_][]u8{}) catch |err| {
-            const stderr = std.io.getStdErr().writer();
+            var stderr_buffer: [1024]u8 = undefined;
+            var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+            const stderr = &stderr_writer.interface;
             stderr.print("Error: {}\n", .{err}) catch {};
+            stderr.flush() catch {};
             std.process.exit(1);
         };
         return;
     }
 
     execute_flame_graph_generation(args[1..]) catch |err| {
-        const stderr = std.io.getStdErr().writer();
+        var stderr_buffer: [1024]u8 = undefined;
+        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        const stderr = &stderr_writer.interface;
         stderr.print("Error in main: {}\n", .{err}) catch {};
+        stderr.flush() catch {};
         std.process.exit(1);
     };
 }
@@ -271,7 +277,9 @@ fn consume_string_flag(args: [][]const u8, current_index: *usize) AllErrors![]co
 }
 
 fn show_help() !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
     const usage =
         \\ USAGE: zflame [options] input.txt > graph.svg
         \\ 
@@ -297,6 +305,7 @@ fn show_help() !void {
         \\
     ;
     try stdout.print(usage, .{});
+    try stdout.flush();
 }
 
 fn read_input_file(buffer: *[MAX_INPUT_SIZE_BYTES]u8, file_path: []const u8) AllErrors![]u8 {
@@ -305,13 +314,26 @@ fn read_input_file(buffer: *[MAX_INPUT_SIZE_BYTES]u8, file_path: []const u8) All
 
     if (std.mem.eql(u8, file_path, "-")) {
         // Read from stdin
-        const stdin = std.io.getStdIn().reader();
-        const bytes_read = try stdin.readAll(buffer);
-        if (bytes_read == 0) {
+        var stdin_buffer: [8192]u8 = undefined;
+        var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
+        const stdin = &stdin_reader.interface;
+        var total_bytes: usize = 0;
+        while (total_bytes < buffer.len) {
+            const available = stdin.peek(buffer.len - total_bytes) catch |err| switch (err) {
+                error.EndOfStream => break,
+                else => return err,
+            };
+            if (available.len == 0) break;
+
+            @memcpy(buffer[total_bytes .. total_bytes + available.len], available);
+            _ = try stdin.discard(@enumFromInt(available.len));
+            total_bytes += available.len;
+        }
+
+        if (total_bytes == 0) {
             return error.EmptyInputFile;
         }
-        assert(bytes_read <= buffer.len);
-        return buffer[0..bytes_read];
+        return buffer[0..total_bytes];
     }
 
     const file = std.fs.cwd().openFile(file_path, .{ .mode = .read_only }) catch |err| switch (err) {
@@ -534,11 +556,18 @@ fn generate_flame_graph(
     var generator = flamegraph_mod.Generator.init(config.flamegraph_options);
 
     if (std.mem.eql(u8, config.output_file_path, "-")) {
-        const stdout = std.io.getStdOut().writer();
+        var stdout_buffer: [4096]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
         try generator.generate_from_collapsed(collapsed_stacks, stdout);
+        try stdout.flush();
     } else {
         const output_file = try std.fs.cwd().createFile(config.output_file_path, .{});
         defer output_file.close();
-        try generator.generate_from_collapsed(collapsed_stacks, output_file.writer());
+        var output_file_buffer: [8192]u8 = undefined;
+        var output_file_writer = output_file.writer(&output_file_buffer);
+        const file_writer = &output_file_writer.interface;
+        try generator.generate_from_collapsed(collapsed_stacks, file_writer);
+        try file_writer.flush();
     }
 }
