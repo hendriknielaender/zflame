@@ -170,5 +170,8 @@ pub fn main() !void {
     try benchmark.add("flamegraph_custom_colors", bench_flamegraph_custom_colors, .{});
     try benchmark.add("flamegraph_large_width", bench_flamegraph_large_width, .{});
 
-    try benchmark.run(std.io.getStdOut().writer());
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    try benchmark.run(stdout);
 }

@@ -100,5 +100,8 @@ pub fn main() !void {
     try benchmark.add("dtrace_collapse", bench_dtrace_collapse, .{});
     try benchmark.add("sample_collapse", bench_sample_collapse, .{});
 
-    try benchmark.run(std.io.getStdOut().writer());
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    try benchmark.run(stdout);
 }

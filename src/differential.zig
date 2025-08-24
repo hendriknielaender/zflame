@@ -93,12 +93,14 @@ pub const Generator = struct {
         const after_file = try std.fs.cwd().openFile(after_path, .{});
         defer after_file.close();
 
-        var before_buf_reader = std.io.bufferedReader(before_file.reader());
-        var after_buf_reader = std.io.bufferedReader(after_file.reader());
+        var before_read_buffer: [8192]u8 = undefined;
+        var after_read_buffer: [8192]u8 = undefined;
+        var before_file_reader = before_file.reader(&before_read_buffer);
+        var after_file_reader = after_file.reader(&after_read_buffer);
 
         try self.from_readers(
-            before_buf_reader.reader(),
-            after_buf_reader.reader(),
+            &before_file_reader.interface,
+            &after_file_reader.interface,
             writer,
         );
     }
@@ -110,10 +112,9 @@ pub const Generator = struct {
         is_first: bool,
     ) !u64 {
         var total: u64 = 0;
-        var line_buffer: [MAX_LINE_LENGTH]u8 = undefined;
         var stripped_fractional_samples = false;
 
-        while (try reader.readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
+        while (reader.takeDelimiterExclusive('\n')) |line| {
             if (line.len == 0) continue;
 
             if (self.parse_line(line, &stripped_fractional_samples)) |stack_count| {
@@ -135,6 +136,8 @@ pub const Generator = struct {
 
                 total += stack_count.count;
             }
+        } else |err| switch (err) {
+            error.EndOfStream, error.StreamTooLong, error.ReadFailed => {},
         }
 
         return total;
