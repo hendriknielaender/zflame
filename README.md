@@ -20,7 +20,7 @@ zflame is a cutting-edge flamegraph profiling tool designed for the Zig programm
 
 ### Requirements
 
-- Zig 0.14.0 or later
+- Zig 0.15.1 or later
 - No external dependencies required
 
 ### Building from Source
