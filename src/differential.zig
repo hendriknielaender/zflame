@@ -2,8 +2,8 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
+const Io = std.Io;
 
-const MAX_LINE_LENGTH = 4096;
 const READER_CAPACITY = 128 * 1024;
 
 // Sample counts for before and after profiles.
@@ -50,9 +50,9 @@ pub const Generator = struct {
     // Generate differential output from two readers.
     pub fn from_readers(
         self: *Generator,
-        before_reader: anytype,
-        after_reader: anytype,
-        writer: anytype,
+        before_reader: *Io.Reader,
+        after_reader: *Io.Reader,
+        writer: *Io.Writer,
     ) !void {
         var stack_counts = std.StringHashMap(Counts).init(self.allocator);
         defer {
@@ -68,11 +68,14 @@ pub const Generator = struct {
 
         // Normalize counts if requested.
         if (self.options.normalize and total_before != total_after and total_before > 0) {
-            const scale_factor = @as(f64, @floatFromInt(total_after)) / @as(f64, @floatFromInt(total_before));
+            const total_after_float = @as(f64, @floatFromInt(total_after));
+            const total_before_float = @as(f64, @floatFromInt(total_before));
+            const scale_factor = total_after_float / total_before_float;
 
             var iter = stack_counts.iterator();
             while (iter.next()) |entry| {
-                const scaled_first = @as(u64, @intFromFloat(@as(f64, @floatFromInt(entry.value_ptr.first)) * scale_factor));
+                const first_float = @as(f64, @floatFromInt(entry.value_ptr.first));
+                const scaled_first = @as(u64, @intFromFloat(first_float * scale_factor));
                 entry.value_ptr.first = scaled_first;
             }
         }
@@ -83,24 +86,25 @@ pub const Generator = struct {
     // Generate differential output from two files.
     pub fn from_files(
         self: *Generator,
+        io: Io,
         before_path: []const u8,
         after_path: []const u8,
-        writer: anytype,
+        writer: *Io.Writer,
     ) !void {
-        const before_file = try std.fs.cwd().openFile(before_path, .{});
-        defer before_file.close();
+        var before_file = try Io.Dir.cwd().openFile(io, before_path, .{});
+        defer before_file.close(io);
 
-        const after_file = try std.fs.cwd().openFile(after_path, .{});
-        defer after_file.close();
+        var after_file = try Io.Dir.cwd().openFile(io, after_path, .{});
+        defer after_file.close(io);
 
-        var before_read_buffer: [8192]u8 = undefined;
-        var after_read_buffer: [8192]u8 = undefined;
-        var before_file_reader = before_file.reader(&before_read_buffer);
-        var after_file_reader = after_file.reader(&after_read_buffer);
+        var before_buffer: [READER_CAPACITY]u8 = undefined;
+        var after_buffer: [READER_CAPACITY]u8 = undefined;
+        var before_reader = before_file.reader(io, &before_buffer);
+        var after_reader = after_file.reader(io, &after_buffer);
 
         try self.from_readers(
-            &before_file_reader.interface,
-            &after_file_reader.interface,
+            &before_reader.interface,
+            &after_reader.interface,
             writer,
         );
     }
@@ -108,13 +112,13 @@ pub const Generator = struct {
     fn parse_stack_counts(
         self: *Generator,
         stack_counts: *std.StringHashMap(Counts),
-        reader: anytype,
+        reader: *Io.Reader,
         is_first: bool,
     ) !u64 {
         var total: u64 = 0;
         var stripped_fractional_samples = false;
 
-        while (reader.takeDelimiterExclusive('\n')) |line| {
+        while (try reader.takeDelimiter('\n')) |line| {
             if (line.len == 0) continue;
 
             if (self.parse_line(line, &stripped_fractional_samples)) |stack_count| {
@@ -136,8 +140,6 @@ pub const Generator = struct {
 
                 total += stack_count.count;
             }
-        } else |err| switch (err) {
-            error.EndOfStream, error.StreamTooLong, error.ReadFailed => {},
         }
 
         return total;
@@ -149,12 +151,12 @@ pub const Generator = struct {
         stripped_fractional_samples: *bool,
     ) ?struct { stack: []const u8, count: u64 } {
         // Find the last space to separate stack from count.
-        const last_space = std.mem.lastIndexOf(u8, line, " ") orelse return null;
+        const last_space = std.mem.findLast(u8, line, " ") orelse return null;
 
         var samples_str = std.mem.trim(u8, line[last_space + 1 ..], " \t\r\n");
 
         // Strip fractional part if present.
-        if (std.mem.indexOf(u8, samples_str, ".")) |dot_index| {
+        if (std.mem.find(u8, samples_str, ".")) |dot_index| {
             // Validate that it's a valid number.
             const before_dot = samples_str[0..dot_index];
             const after_dot = samples_str[dot_index + 1 ..];
@@ -186,7 +188,11 @@ pub const Generator = struct {
                 }
                 if (has_non_zero) {
                     stripped_fractional_samples.* = true;
-                    std.debug.print("Warning: Input data has fractional sample counts that will be truncated to integers\n", .{});
+                    std.debug.print(
+                        "Warning: Input data has fractional sample counts " ++
+                            "that will be truncated to integers\n",
+                        .{},
+                    );
                 }
             }
 
@@ -194,7 +200,7 @@ pub const Generator = struct {
         }
 
         const count = std.fmt.parseInt(u64, samples_str, 10) catch return null;
-        const stack = std.mem.trimRight(u8, line[0..last_space], " \t\r");
+        const stack = std.mem.trimEnd(u8, line[0..last_space], " \t\r");
 
         if (self.options.strip_hex) {
             // For simplicity, we'll return the original stack here and implement
@@ -209,7 +215,7 @@ pub const Generator = struct {
     fn write_stacks(
         self: *Generator,
         stack_counts: *const std.StringHashMap(Counts),
-        writer: anytype,
+        writer: *Io.Writer,
     ) !void {
         _ = self;
 
@@ -234,24 +240,24 @@ test "differential basic functionality" {
     const before_data = "main;func1 100\nmain;func2 50\n";
     const after_data = "main;func1 150\nmain;func3 75\n";
 
-    var before_stream = std.io.fixedBufferStream(before_data);
-    var after_stream = std.io.fixedBufferStream(after_data);
+    var before_reader: Io.Reader = .fixed(before_data);
+    var after_reader: Io.Reader = .fixed(after_data);
 
-    var output = std.ArrayList(u8).init(allocator);
+    var output: Io.Writer.Allocating = .init(allocator);
     defer output.deinit();
 
     try generator.from_readers(
-        before_stream.reader(),
-        after_stream.reader(),
-        output.writer(),
+        &before_reader,
+        &after_reader,
+        &output.writer,
     );
 
-    const result = output.items;
+    const result = output.written();
 
     // Should contain three lines with stack and two counts.
-    try testing.expect(std.mem.indexOf(u8, result, "main;func1 100 150") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "main;func2 50 0") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "main;func3 0 75") != null);
+    try testing.expect(std.mem.find(u8, result, "main;func1 100 150") != null);
+    try testing.expect(std.mem.find(u8, result, "main;func2 50 0") != null);
+    try testing.expect(std.mem.find(u8, result, "main;func3 0 75") != null);
 }
 
 test "differential with normalization" {
@@ -262,22 +268,22 @@ test "differential with normalization" {
     const before_data = "main;func1 100\n"; // Total: 100
     const after_data = "main;func1 50\n"; // Total: 50
 
-    var before_stream = std.io.fixedBufferStream(before_data);
-    var after_stream = std.io.fixedBufferStream(after_data);
+    var before_reader: Io.Reader = .fixed(before_data);
+    var after_reader: Io.Reader = .fixed(after_data);
 
-    var output = std.ArrayList(u8).init(allocator);
+    var output: Io.Writer.Allocating = .init(allocator);
     defer output.deinit();
 
     try generator.from_readers(
-        before_stream.reader(),
-        after_stream.reader(),
-        output.writer(),
+        &before_reader,
+        &after_reader,
+        &output.writer,
     );
 
-    const result = output.items;
+    const result = output.written();
 
     // With normalization, first count should be scaled: 100 * (50/100) = 50.
-    try testing.expect(std.mem.indexOf(u8, result, "main;func1 50 50") != null);
+    try testing.expect(std.mem.find(u8, result, "main;func1 50 50") != null);
 }
 
 test "parse line with fractional samples" {

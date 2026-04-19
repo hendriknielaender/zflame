@@ -64,6 +64,7 @@ pub fn build(b: *std.Build) void {
 
     // Test files for all collapse parsers.
     const test_files = [_][]const u8{
+        "src/diff_folded.zig",
         "src/test_collapse.zig",
     };
 

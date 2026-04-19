@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Io = std.Io;
 
 const MAX_OCCURRENCES_CAPACITY = 1024;
 const MAX_STACK_LENGTH = 2048;
@@ -145,8 +146,8 @@ pub const Collapse = struct {
     // Function pointer for collapsing implementation.
     collapse_fn: *const fn (
         self: *anyopaque,
-        reader: anytype,
-        writer: anytype,
+        reader: *Io.Reader,
+        writer: *Io.Writer,
     ) anyerror!void,
 
     // Function pointer to check if format is applicable.
@@ -160,8 +161,8 @@ pub const Collapse = struct {
 
     pub fn collapse(
         self: *Collapse,
-        reader: anytype,
-        writer: anytype,
+        reader: *Io.Reader,
+        writer: *Io.Writer,
     ) !void {
         return self.collapse_fn(self.impl, reader, writer);
     }
@@ -176,8 +177,8 @@ pub fn create_collapse(comptime T: type, impl: *T) Collapse {
     const gen = struct {
         fn collapse_wrapper(
             ptr: *anyopaque,
-            reader: anytype,
-            writer: anytype,
+            reader: *Io.Reader,
+            writer: *Io.Writer,
         ) anyerror!void {
             const self = @as(*T, @ptrCast(@alignCast(ptr)));
             return T.collapse(self, reader, writer);

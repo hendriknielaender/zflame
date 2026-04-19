@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const collapse_types = @import("collapse.zig");
+const Io = std.Io;
 
 pub const Options = struct {};
 
@@ -20,12 +21,11 @@ pub const Folder = struct {
 
     pub fn collapse(
         self: *Folder,
-        reader: anytype,
-        writer: anytype,
+        reader: *Io.Reader,
+        writer: *Io.Writer,
     ) !void {
         _ = self;
-        var line_buffer: [4096]u8 = undefined;
-        while (try reader.readUntilDelimiterOrEof(line_buffer[0..], '\n')) |line| {
+        while (try reader.takeDelimiter('\n')) |line| {
             if (line.len > 0) {
                 try writer.print("{s} 1\n", .{line});
             }

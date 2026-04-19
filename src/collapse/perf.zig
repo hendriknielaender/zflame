@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const collapse_types = @import("collapse.zig");
+const Io = std.Io;
 
 const MAX_STACK_DEPTH = 32;
 const MAX_FUNCTION_NAME_LENGTH = 128;
@@ -77,8 +78,12 @@ pub const Folder = struct {
             .current_stack_len = 0,
             .current_count = 0,
             .stack_filter = .keep,
-            .cache_keys = [_][MAX_FUNCTION_NAME_LENGTH]u8{[_]u8{0} ** MAX_FUNCTION_NAME_LENGTH} ** MAX_CACHE_ENTRIES,
-            .cache_values = [_][MAX_FUNCTION_NAME_LENGTH]u8{[_]u8{0} ** MAX_FUNCTION_NAME_LENGTH} ** MAX_CACHE_ENTRIES,
+            .cache_keys = [_][MAX_FUNCTION_NAME_LENGTH]u8{
+                [_]u8{0} ** MAX_FUNCTION_NAME_LENGTH,
+            } ** MAX_CACHE_ENTRIES,
+            .cache_values = [_][MAX_FUNCTION_NAME_LENGTH]u8{
+                [_]u8{0} ** MAX_FUNCTION_NAME_LENGTH,
+            } ** MAX_CACHE_ENTRIES,
             .cache_key_lens = [_]usize{0} ** MAX_CACHE_ENTRIES,
             .cache_value_lens = [_]usize{0} ** MAX_CACHE_ENTRIES,
             .cache_used = [_]bool{false} ** MAX_CACHE_ENTRIES,
@@ -102,8 +107,8 @@ pub const Folder = struct {
 
     pub fn collapse(
         self: *Folder,
-        reader: anytype,
-        writer: anytype,
+        reader: *Io.Reader,
+        writer: *Io.Writer,
     ) !void {
         var occurrences = collapse_types.Occurrences.init();
         defer occurrences.deinit();
@@ -121,17 +126,17 @@ pub const Folder = struct {
             if (trimmed.len == 0) continue;
 
             // Check for perf header patterns.
-            if (std.mem.indexOf(u8, trimmed, "perf ") != null or
-                std.mem.indexOf(u8, trimmed, "# cmdline") != null)
+            if (std.mem.find(u8, trimmed, "perf ") != null or
+                std.mem.find(u8, trimmed, "# cmdline") != null)
             {
                 return true;
             }
 
             // Check for perf event line pattern: "comm pid/tid timestamp: event:"
-            if (is_event_line(trimmed) and std.mem.indexOf(u8, trimmed, ":") != null) {
+            if (is_event_line(trimmed) and std.mem.find(u8, trimmed, ":") != null) {
                 // Look for typical perf timestamp and event pattern
-                if (std.mem.indexOf(u8, trimmed, ".") != null and
-                    std.mem.indexOf(u8, trimmed, " ") != null)
+                if (std.mem.find(u8, trimmed, ".") != null and
+                    std.mem.find(u8, trimmed, " ") != null)
                 {
                     return true;
                 }
@@ -142,12 +147,10 @@ pub const Folder = struct {
 
     fn process_input(
         self: *Folder,
-        reader: anytype,
+        reader: *Io.Reader,
         occurrences: *collapse_types.Occurrences,
     ) !void {
-        var line_buffer: [MAX_LINE_LENGTH]u8 = undefined;
-
-        while (try reader.readUntilDelimiterOrEof(line_buffer[0..], '\n')) |line| {
+        while (try reader.takeDelimiter('\n')) |line| {
             if (line.len == 0) {
                 try self.end_stack(occurrences);
                 continue;
@@ -268,7 +271,8 @@ pub const Folder = struct {
         }
 
         if (final_stack_len + self.current_stack_len < final_stack.len) {
-            @memcpy(final_stack[final_stack_len .. final_stack_len + self.current_stack_len], self.current_stack[0..self.current_stack_len]);
+            const current_stack = self.current_stack[0..self.current_stack_len];
+            @memcpy(final_stack[final_stack_len..][0..current_stack.len], current_stack);
             final_stack_len += self.current_stack_len;
         }
 
@@ -352,7 +356,7 @@ pub const Folder = struct {
         if (name.len == 0) return "";
 
         // Check for kernel annotation by looking for [kernel in the line.
-        const is_kernel = std.mem.indexOf(u8, line, "[kernel") != null;
+        const is_kernel = std.mem.find(u8, line, "[kernel") != null;
         if (self.options.annotate_kernel and is_kernel) {
             var annotated_buffer: [MAX_FUNCTION_NAME_LENGTH]u8 = undefined;
             if (name.len + 4 < annotated_buffer.len) {
@@ -489,17 +493,17 @@ test "perf collapse basic functionality" {
         "\t          401234 main (/usr/bin/test-program)\n" ++
         "\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
+    var input_reader: Io.Reader = .fixed(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
+    var output_writer: Io.Writer = .fixed(&output_buffer);
 
     // Run collapse.
-    try folder.collapse(input_stream.reader(), output_stream.writer());
+    try folder.collapse(&input_reader, &output_writer);
 
     // Check output contains expected stacks.
-    const result = output_stream.getWritten();
-    try testing.expect(std.mem.indexOf(u8, result, "test-program;main;func2;func1 1") != null);
-    try testing.expect(std.mem.indexOf(u8, result, "test-program;main;func3 1") != null);
+    const result = output_writer.buffered();
+    try testing.expect(std.mem.find(u8, result, "test-program;main;func2;func1 1") != null);
+    try testing.expect(std.mem.find(u8, result, "test-program;main;func3 1") != null);
 }
 
 test "perf collapse with options" {
@@ -517,13 +521,13 @@ test "perf collapse with options" {
         "\t          400000 user_func (/usr/bin/test)\n" ++
         "\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
+    var input_reader: Io.Reader = .fixed(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
+    var output_writer: Io.Writer = .fixed(&output_buffer);
 
-    try folder.collapse(input_stream.reader(), output_stream.writer());
+    try folder.collapse(&input_reader, &output_writer);
 
-    const result = output_stream.getWritten();
+    const result = output_writer.buffered();
     try testing.expect(result.len > 0);
 }
 
@@ -532,13 +536,13 @@ test "perf collapse empty input" {
     defer folder.deinit();
 
     const input = "";
-    var input_stream = std.io.fixedBufferStream(input);
+    var input_reader: Io.Reader = .fixed(input);
     var output_buffer: [1024]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
+    var output_writer: Io.Writer = .fixed(&output_buffer);
 
-    try folder.collapse(input_stream.reader(), output_stream.writer());
+    try folder.collapse(&input_reader, &output_writer);
 
-    try testing.expectEqual(@as(usize, 0), output_stream.pos);
+    try testing.expectEqual(@as(usize, 0), output_writer.buffered().len);
 }
 
 test "perf is_applicable" {

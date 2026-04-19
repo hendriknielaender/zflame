@@ -166,7 +166,11 @@ fn process_header_line(state: *ParsingState, line: []const u8) !void {
     assert(is_header_line(line));
 
     if (std.mem.startsWith(u8, line, "# cmdline")) {
-        try extract_process_name_to_buffer(line, &state.current_process_name, &state.current_process_name_len);
+        try extract_process_name_to_buffer(
+            line,
+            &state.current_process_name,
+            &state.current_process_name_len,
+        );
     }
 }
 
@@ -179,16 +183,24 @@ fn process_trace_header_line(state: *ParsingState, line: []const u8) !void {
     state.current_stack_len = 0;
 }
 
-fn process_stack_frame_line(state: *ParsingState, line: []const u8, config: PerfParserConfig) !void {
+fn process_stack_frame_line(
+    state: *ParsingState,
+    line: []const u8,
+    config: PerfParserConfig,
+) !void {
     assert(line.len > 0);
     assert(is_stack_frame_line(line));
 
     var func_name_buffer: [MAX_FUNCTION_NAME_LEN]u8 = undefined;
-    const func_name = extract_function_name_to_buffer(line, config, &func_name_buffer) orelse return;
+    const func_name =
+        extract_function_name_to_buffer(line, config, &func_name_buffer) orelse return;
 
     if (state.current_stack_len + func_name.len + 1 >= MAX_LINE_LEN) return;
 
-    @memcpy(state.current_stack_buffer[state.current_stack_len .. state.current_stack_len + func_name.len], func_name);
+    @memcpy(
+        state.current_stack_buffer[state.current_stack_len..][0..func_name.len],
+        func_name,
+    );
     state.current_stack_len += func_name.len;
     state.current_stack_buffer[state.current_stack_len] = ';';
     state.current_stack_len += 1;
@@ -228,7 +240,10 @@ fn build_final_stack(
 
         @memcpy(buffer[0..process_name.len], process_name);
         buffer[process_name.len] = ';';
-        @memcpy(buffer[process_name.len + 1 .. process_name.len + 1 + current_stack.len], current_stack);
+        @memcpy(
+            buffer[process_name.len + 1 ..][0..current_stack.len],
+            current_stack,
+        );
 
         return buffer[0 .. process_name.len + 1 + current_stack.len];
     } else {
@@ -355,7 +370,7 @@ fn extract_sample_count(line: []const u8) ?u64 {
 
     while (parts_iterator.next()) |part| {
         if (part_index == 1) {
-            const slash_pos = std.mem.indexOf(u8, part, "/") orelse return null;
+            const slash_pos = std.mem.find(u8, part, "/") orelse return null;
             if (slash_pos == 0) return null;
 
             const count_str = part[0..slash_pos];
@@ -384,7 +399,7 @@ fn extract_function_name_to_buffer(
     const func_name_part = parts_iterator.next() orelse return null;
     if (func_name_part.len == 0) return null;
 
-    const plus_pos = std.mem.indexOf(u8, func_name_part, "+") orelse func_name_part.len;
+    const plus_pos = std.mem.find(u8, func_name_part, "+") orelse func_name_part.len;
     const func_name = func_name_part[0..plus_pos];
 
     if (func_name.len == 0) return null;

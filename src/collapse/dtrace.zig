@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const collapse_types = @import("collapse.zig");
+const Io = std.Io;
 
 pub const Options = struct {
     include_offset: bool = false,
@@ -22,13 +23,12 @@ pub const Folder = struct {
 
     pub fn collapse(
         self: *Folder,
-        reader: anytype,
-        writer: anytype,
+        reader: *Io.Reader,
+        writer: *Io.Writer,
     ) !void {
         _ = self;
-        // Simple passthrough for now - just copy input to output in collapsed format
-        var line_buffer: [4096]u8 = undefined;
-        while (try reader.readUntilDelimiterOrEof(line_buffer[0..], '\n')) |line| {
+        // Simple passthrough for now - just copy input to output in collapsed format.
+        while (try reader.takeDelimiter('\n')) |line| {
             if (line.len > 0) {
                 try writer.print("{s} 1\n", .{line});
             }
@@ -37,6 +37,6 @@ pub const Folder = struct {
 
     pub fn is_applicable(self: *Folder, input: []const u8) bool {
         _ = self;
-        return std.mem.indexOf(u8, input, "dtrace") != null;
+        return std.mem.find(u8, input, "dtrace") != null;
     }
 };
