@@ -1,4 +1,4 @@
-// XCTrace stack collapse parser - minimal stub for no-allocation version
+// XCTrace stack collapse parser.
 
 const std = @import("std");
 const collapse_types = @import("collapse.zig");

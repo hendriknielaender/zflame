@@ -1,4 +1,4 @@
-// Format auto-detection for stack collapse parsers - minimal stub for no-allocation version
+// Format auto-detection for stack collapse parsers.
 
 const std = @import("std");
 const collapse_types = @import("collapse.zig");
@@ -35,6 +35,6 @@ pub const Folder = struct {
     pub fn is_applicable(self: *Folder, input: []const u8) bool {
         _ = self;
         _ = input;
-        return true; // Guess format always applicable as fallback
+        return true; // Guess format is always applicable as fallback.
     }
 };

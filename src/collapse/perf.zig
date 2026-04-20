@@ -101,7 +101,7 @@ pub const Folder = struct {
     }
 
     pub fn deinit(self: *Folder) void {
-        // No dynamic memory to free
+        // No dynamic memory is owned by the folder.
         _ = self;
     }
 
@@ -134,7 +134,7 @@ pub const Folder = struct {
 
             // Check for perf event line pattern: "comm pid/tid timestamp: event:"
             if (is_event_line(trimmed) and std.mem.find(u8, trimmed, ":") != null) {
-                // Look for typical perf timestamp and event pattern
+                // Look for the typical perf timestamp and event pattern.
                 if (std.mem.find(u8, trimmed, ".") != null and
                     std.mem.find(u8, trimmed, " ") != null)
                 {
@@ -377,12 +377,12 @@ pub const Folder = struct {
 
     fn tidy_function_name(self: *Folder, name: []const u8) []const u8 {
         _ = self;
-        // TODO: Implement generic tidying for C++ templates, Rust generics, etc.
+        // Generic names are already safe to pass through until tidying is implemented.
         return name;
     }
 
     fn cache_string(self: *Folder, str: []const u8) []const u8 {
-        // Check if already cached
+        // Return the cached copy when this string was already interned.
         for (0..self.cache_count) |i| {
             if (self.cache_used[i] and
                 self.cache_key_lens[i] == str.len and
@@ -392,7 +392,7 @@ pub const Folder = struct {
             }
         }
 
-        // Find empty slot
+        // Store the string in the next empty cache slot.
         if (self.cache_count < MAX_CACHE_ENTRIES and str.len < MAX_FUNCTION_NAME_LENGTH) {
             const index = self.cache_count;
             self.cache_used[index] = true;
@@ -404,7 +404,7 @@ pub const Folder = struct {
             return self.cache_values[index][0..str.len];
         }
 
-        // Cache full, return original
+        // Fall back to the original string when the fixed cache is full.
         return str;
     }
 };
@@ -472,7 +472,7 @@ fn clean_comm_name(name: []const u8, buffer: *[MAX_PROCESS_NAME_LENGTH]u8) usize
     return write_index;
 }
 
-// Tests
+// Tests.
 const testing = std.testing;
 
 test "perf collapse basic functionality" {

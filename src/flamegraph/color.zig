@@ -49,7 +49,7 @@ pub const BackgroundColor = enum {
         if (std.mem.eql(u8, s, "blue")) return .blue;
         if (std.mem.eql(u8, s, "green")) return .green;
         if (std.mem.eql(u8, s, "grey")) return .grey;
-        // Could support flat colors with hex parsing
+        // Flat colors need separate hex parsing support.
         return error.UnknownBackgroundColor;
     }
 };
@@ -154,19 +154,19 @@ const java = struct {
             std.mem.startsWith(u8, name, "-[") or
             std.mem.startsWith(u8, name, "+["))
         {
-            // C++ or Objective C
+            // C++ or Objective-C frames use the yellow palette.
             return .yellow;
         } else if (std.mem.find(u8, java_prefix, "/") != null) {
-            // Java
+            // Java package paths use the green palette.
             return .green;
         } else if (std.mem.find(u8, java_prefix, ".") != null) {
             if (std.mem.startsWith(u8, java_prefix, "[")) return .red;
             return .green;
         } else if (java_prefix.len > 0 and std.ascii.isUpper(java_prefix[0])) {
-            // Java class (starts with uppercase)
+            // Java class names start with uppercase letters.
             return .green;
         } else {
-            // System
+            // System frames use the red palette.
             return .red;
         }
     }
@@ -545,7 +545,7 @@ pub fn parse_hex_color(s: []const u8) ?Color {
     return Color.init(r, g, b);
 }
 
-// Tests
+// Tests.
 const testing = std.testing;
 
 fn dummy_rng() f32 {

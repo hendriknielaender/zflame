@@ -117,12 +117,18 @@ pub const Generator = struct {
     ) !u64 {
         var total: u64 = 0;
         var stripped_fractional_samples = false;
+        var stripped_stack_buffer: [READER_CAPACITY]u8 = undefined;
 
         while (try reader.takeDelimiter('\n')) |line| {
             if (line.len == 0) continue;
 
             if (self.parse_line(line, &stripped_fractional_samples)) |stack_count| {
-                const stack_owned = try self.allocator.dupe(u8, stack_count.stack);
+                const stack = if (self.options.strip_hex)
+                    strip_hex_addresses(stack_count.stack, stripped_stack_buffer[0..])
+                else
+                    stack_count.stack;
+
+                const stack_owned = try self.allocator.dupe(u8, stack);
 
                 const result = try stack_counts.getOrPut(stack_owned);
                 if (result.found_existing) {
@@ -146,7 +152,7 @@ pub const Generator = struct {
     }
 
     fn parse_line(
-        self: *Generator,
+        _: *Generator,
         line: []const u8,
         stripped_fractional_samples: *bool,
     ) ?struct { stack: []const u8, count: u64 } {
@@ -202,14 +208,7 @@ pub const Generator = struct {
         const count = std.fmt.parseInt(u64, samples_str, 10) catch return null;
         const stack = std.mem.trimEnd(u8, line[0..last_space], " \t\r");
 
-        if (self.options.strip_hex) {
-            // For simplicity, we'll return the original stack here and implement
-            // hex stripping in a separate allocation. In a production version,
-            // you'd want to optimize this.
-            return .{ .stack = stack, .count = count };
-        } else {
-            return .{ .stack = stack, .count = count };
-        }
+        return .{ .stack = stack, .count = count };
     }
 
     fn write_stacks(
@@ -229,7 +228,49 @@ pub const Generator = struct {
     }
 };
 
-// Tests
+fn strip_hex_addresses(stack: []const u8, buffer: []u8) []const u8 {
+    assert(stack.len <= buffer.len);
+
+    var read_index: usize = 0;
+    var write_index: usize = 0;
+
+    while (read_index < stack.len) {
+        if (hex_address_end(stack, read_index)) |hex_end| {
+            const replacement = "0x...";
+            assert(write_index + replacement.len <= buffer.len);
+            @memcpy(buffer[write_index..][0..replacement.len], replacement);
+            write_index += replacement.len;
+            read_index = hex_end;
+            continue;
+        }
+
+        assert(write_index < buffer.len);
+        buffer[write_index] = stack[read_index];
+        write_index += 1;
+        read_index += 1;
+    }
+
+    return buffer[0..write_index];
+}
+
+fn hex_address_end(stack: []const u8, index: usize) ?usize {
+    if (index + 2 >= stack.len) return null;
+    if (stack[index] != '0') return null;
+    if (stack[index + 1] != 'x') return null;
+    if (!std.ascii.isHex(stack[index + 2])) return null;
+
+    var hex_end = index + 3;
+    while (hex_end < stack.len and std.ascii.isHex(stack[hex_end])) {
+        hex_end += 1;
+    }
+
+    const hex_digits = hex_end - index - 2;
+    if (hex_digits < 3) return null;
+
+    return hex_end;
+}
+
+// Tests.
 const testing = std.testing;
 
 test "differential basic functionality" {
@@ -284,6 +325,37 @@ test "differential with normalization" {
 
     // With normalization, first count should be scaled: 100 * (50/100) = 50.
     try testing.expect(std.mem.find(u8, result, "main;func1 50 50") != null);
+}
+
+test "differential strips hex addresses" {
+    const allocator = testing.allocator;
+
+    var generator = Generator.init(allocator, .{ .strip_hex = true });
+
+    const before_data = "main;0x45ef2173;leaf 1\n";
+    const after_data = "main;0x45ef2174;leaf 2\n";
+
+    var before_reader: Io.Reader = .fixed(before_data);
+    var after_reader: Io.Reader = .fixed(after_data);
+
+    var output: Io.Writer.Allocating = .init(allocator);
+    defer output.deinit();
+
+    try generator.from_readers(
+        &before_reader,
+        &after_reader,
+        &output.writer,
+    );
+
+    const result = output.written();
+    try testing.expect(std.mem.find(u8, result, "main;0x...;leaf 1 2") != null);
+}
+
+test "strip hex addresses keeps short hex words" {
+    var buffer: [128]u8 = undefined;
+
+    const stripped = strip_hex_addresses("main;0x45ef2173;0xab;tail", buffer[0..]);
+    try testing.expectEqualStrings("main;0x...;0xab;tail", stripped);
 }
 
 test "parse line with fractional samples" {

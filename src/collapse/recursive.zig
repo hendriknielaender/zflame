@@ -1,4 +1,4 @@
-// Recursive stack collapse parser - minimal stub for no-allocation version
+// Recursive stack collapse parser.
 
 const std = @import("std");
 const collapse_types = @import("collapse.zig");

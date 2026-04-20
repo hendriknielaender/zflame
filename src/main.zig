@@ -120,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (args.len == 1) {
-        write_stderr(io, "Error: missing format and input path. Use --help for usage.\n", .{});
+        cli_log.err("missing format and input path. Use --help for usage.", .{});
         std.process.exit(1);
         return;
     }
@@ -176,7 +176,7 @@ fn process_input_and_generate_flame_graph(io: Io, config: Config) !void {
     // Generate flame graph.
     try generate_flame_graph(io, collapsed_stacks, config);
 
-    // Only print success message if not writing to stdout
+    // Only print the success message when the SVG is written to a file.
     if (!std.mem.eql(u8, config.output_file_path, "-")) {
         std.debug.print("Flame graph generated successfully: {s}\n", .{config.output_file_path});
     }
@@ -496,11 +496,11 @@ fn read_input_file(
         .mode = .read_only,
     }) catch |err| switch (err) {
         error.FileNotFound => {
-            std.debug.print("Error: Input file not found: {s}\n", .{file_path});
+            cli_log.err("input file not found: {s}", .{file_path});
             return err;
         },
         error.AccessDenied => {
-            std.debug.print("Error: Access denied to file: {s}\n", .{file_path});
+            cli_log.err("access denied to file: {s}", .{file_path});
             return err;
         },
         else => return err,
@@ -558,9 +558,9 @@ fn collapse_input_data(
     } else if (std.mem.eql(u8, format, "guess")) {
         return collapse_guess_data(storage, stack_storage, input_data);
     } else {
-        std.debug.print("Error: Unsupported input format: {s}\n", .{format});
-        std.debug.print(
-            "Supported formats: perf, dtrace, sample, vtune, xctrace, recursive, guess\n",
+        cli_log.err("unsupported input format: {s}", .{format});
+        cli_log.err(
+            "supported formats: perf, dtrace, sample, vtune, xctrace, recursive, guess",
             .{},
         );
         return FlameGraphError.UnsupportedFormat;
@@ -737,6 +737,8 @@ fn cli_error_reported(err: anyerror) bool {
     return switch (err) {
         error.InvalidArguments,
         error.UnsupportedFormat,
+        error.FileNotFound,
+        error.AccessDenied,
         => true,
         else => false,
     };

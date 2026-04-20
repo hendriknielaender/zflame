@@ -358,7 +358,7 @@ fn cli_error_reported(err: anyerror) bool {
     };
 }
 
-// Tests
+// Tests.
 const testing = std.testing;
 
 test "parse command line args basic" {
