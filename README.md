@@ -1,11 +1,20 @@
 # zflame - Flamegraph Profiling
 
-[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/hendriknielaender/zflame/blob/HEAD/LICENSE)
-![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/hendriknielaender/zflame)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/hendriknielaender/zflame/blob/HEAD/CONTRIBUTING.md)
+[![MIT license][license-badge]][license-link]
+![GitHub code size in bytes][code-size-badge]
+[![PRs Welcome][prs-badge]][contributing-link]
 <img src="logo.png" alt="zflame logo" align="right" width="20%"/>
 
-zflame is a cutting-edge flamegraph profiling tool designed for the Zig programming language, aimed at simplifying performance analysis and optimization. By leveraging Zig's low-level capabilities, `zflame` provides detailed, interactive flamegraphs that help developers identify and address performance bottlenecks in their applications.
+zflame is a cutting-edge flamegraph profiling tool designed for the Zig programming language,
+aimed at simplifying performance analysis and optimization. By leveraging Zig's low-level
+capabilities, `zflame` provides detailed, interactive flamegraphs that help developers identify
+and address performance bottlenecks in their applications.
+
+[license-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[license-link]: https://github.com/hendriknielaender/zflame/blob/HEAD/LICENSE
+[code-size-badge]: https://img.shields.io/github/languages/code-size/hendriknielaender/zflame
+[prs-badge]: https://img.shields.io/badge/PRs-welcome-brightgreen.svg
+[contributing-link]: https://github.com/hendriknielaender/zflame/blob/HEAD/CONTRIBUTING.md
 
 ## Features
 
@@ -20,7 +29,7 @@ zflame is a cutting-edge flamegraph profiling tool designed for the Zig programm
 
 ### Requirements
 
-- Zig 0.15.1 or later
+- Zig 0.16.0 or later
 - No external dependencies required
 
 ### Building from Source
@@ -46,8 +55,11 @@ perf record -F 99 -g ./your_program
 # Generate perf script output
 perf script > perf.out
 
-# Create flamegraph
+# Create flamegraph. The input format is an explicit subcommand.
 zflame perf perf.out > flamegraph.svg
+
+# Pass options with --key=value syntax.
+zflame perf --colors=hot --title="CPU Profile" perf.out > flamegraph.svg
 ```
 
 Supported input formats:
@@ -62,7 +74,7 @@ Supported input formats:
 Compare performance between two runs:
 
 ```bash
-zflame diff-folded before.folded after.folded | zflame flamegraph > diff.svg
+diff-folded --output=diff.folded before.folded after.folded
 ```
 
 ### Library Usage
@@ -71,33 +83,56 @@ zflame diff-folded before.folded after.folded | zflame flamegraph > diff.svg
 const std = @import("std");
 const zflame = @import("zflame");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
 
-    // Parse perf output
-    const perf_data = try std.fs.cwd().readFileAlloc(allocator, "perf.out", 1024 * 1024);
-    defer allocator.free(perf_data);
+    var output_file = try std.Io.Dir.cwd().createFile(io, "flamegraph.svg", .{});
+    defer output_file.close(io);
 
-    // Collapse stack traces
-    var folder = try zflame.perf.Folder.init(.{});
-    defer folder.deinit();
-    
-    const collapsed = try folder.collapse(allocator, perf_data);
-    defer allocator.free(collapsed);
+    const collapsed_stacks = [_]zflame.collapse.CollapsedStack{
+        .{ .stack = "main;work;hot_path", .count = 42 },
+        .{ .stack = "main;work;cold_path", .count = 7 },
+    };
 
-    // Generate flamegraph
-    const options = zflame.flamegraph.Options{
+    var output_buffer: [16 * 1024]u8 = undefined;
+    var output_writer = output_file.writer(io, &output_buffer);
+
+    var generator = zflame.flamegraph.Generator.init(.{
         .title = "CPU Profile",
         .count_name = "samples",
-        .color_scheme = .hot,
-    };
-    
-    const svg = try zflame.flamegraph.generate(allocator, collapsed, options);
-    defer allocator.free(svg);
-    
-    try std.fs.cwd().writeFile("flamegraph.svg", svg);
+        .palette = .{ .basic = .hot },
+    });
+    try generator.generate_from_collapsed(&collapsed_stacks, &output_writer.interface);
+    try output_writer.interface.flush();
+}
+```
+
+To collapse raw perf output to folded stacks:
+
+```zig
+const std = @import("std");
+const zflame = @import("zflame");
+
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+
+    var input_file = try std.Io.Dir.cwd().openFile(io, "perf.out", .{});
+    defer input_file.close(io);
+
+    var output_file = try std.Io.Dir.cwd().createFile(io, "perf.folded", .{});
+    defer output_file.close(io);
+
+    var folder = try zflame.perf.Folder.init(.{});
+    defer folder.deinit();
+
+    var input_buffer: [16 * 1024]u8 = undefined;
+    var output_buffer: [16 * 1024]u8 = undefined;
+
+    var input_reader = input_file.reader(io, &input_buffer);
+    var output_writer = output_file.writer(io, &output_buffer);
+
+    try folder.collapse(&input_reader.interface, &output_writer.interface);
+    try output_writer.interface.flush();
 }
 ```
 
@@ -124,7 +159,9 @@ src/
 
 ## Acknowledgments
 
-This project is a Zig port of [inferno](https://github.com/jonhoo/inferno/) by [Jon Gjengset](https://github.com/jonhoo). The original Rust implementation provided the algorithmic foundation and design inspiration for zflame. 
+This project is a Zig port of [inferno](https://github.com/jonhoo/inferno/) by
+[Jon Gjengset](https://github.com/jonhoo). The original Rust implementation provided the
+algorithmic foundation and design inspiration for zflame.
 
 Additional thanks to:
 - Brendan Gregg for inventing flamegraphs and the original implementation

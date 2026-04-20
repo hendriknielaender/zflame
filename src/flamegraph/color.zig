@@ -14,7 +14,11 @@ pub const Color = struct {
     }
 
     pub fn to_hex_string(self: Color, allocator: std.mem.Allocator) ![]u8 {
-        return try std.fmt.allocPrint(allocator, "#{:02x}{:02x}{:02x}", .{ self.r, self.g, self.b });
+        return try std.fmt.allocPrint(
+            allocator,
+            "#{:02x}{:02x}{:02x}",
+            .{ self.r, self.g, self.b },
+        );
     }
 };
 
@@ -45,7 +49,7 @@ pub const BackgroundColor = enum {
         if (std.mem.eql(u8, s, "blue")) return .blue;
         if (std.mem.eql(u8, s, "green")) return .green;
         if (std.mem.eql(u8, s, "grey")) return .grey;
-        // Could support flat colors with hex parsing
+        // Flat colors need separate hex parsing support.
         return error.UnknownBackgroundColor;
     }
 };
@@ -107,7 +111,24 @@ pub const Palette = union(enum) {
         return error.UnknownPalette;
     }
 
-    pub const VARIANTS = [_][]const u8{ "aqua", "blue", "green", "hot", "io", "java", "js", "mem", "orange", "perl", "python", "purple", "red", "rust", "wakeup", "yellow" };
+    pub const VARIANTS = [_][]const u8{
+        "aqua",
+        "blue",
+        "green",
+        "hot",
+        "io",
+        "java",
+        "js",
+        "mem",
+        "orange",
+        "perl",
+        "python",
+        "purple",
+        "red",
+        "rust",
+        "wakeup",
+        "yellow",
+    };
 };
 
 // Palette resolution functions for semantic coloring.
@@ -115,7 +136,7 @@ const java = struct {
     fn resolve(name: []const u8) BasicPalette {
         // Handle annotations (_[j], _[i], _[k]).
         if (std.mem.endsWith(u8, name, "]")) {
-            if (std.mem.lastIndexOf(u8, name, "_[")) |ai| {
+            if (std.mem.findLast(u8, name, "_[")) |ai| {
                 if (ai + 4 == name.len) {
                     switch (name[ai + 2]) {
                         'k' => return .orange, // kernel annotation
@@ -129,22 +150,23 @@ const java = struct {
 
         const java_prefix = if (std.mem.startsWith(u8, name, "L")) name[1..] else name;
 
-        if (std.mem.indexOf(u8, name, "::") != null or
+        if (std.mem.find(u8, name, "::") != null or
             std.mem.startsWith(u8, name, "-[") or
             std.mem.startsWith(u8, name, "+["))
         {
-            // C++ or Objective C
+            // C++ or Objective-C frames use the yellow palette.
             return .yellow;
-        } else if (std.mem.indexOf(u8, java_prefix, "/") != null or
-            (std.mem.indexOf(u8, java_prefix, ".") != null and !std.mem.startsWith(u8, java_prefix, "[")))
-        {
-            // Java
+        } else if (std.mem.find(u8, java_prefix, "/") != null) {
+            // Java package paths use the green palette.
+            return .green;
+        } else if (std.mem.find(u8, java_prefix, ".") != null) {
+            if (std.mem.startsWith(u8, java_prefix, "[")) return .red;
             return .green;
         } else if (java_prefix.len > 0 and std.ascii.isUpper(java_prefix[0])) {
-            // Java class (starts with uppercase)
+            // Java class names start with uppercase letters.
             return .green;
         } else {
-            // System
+            // System frames use the red palette.
             return .red;
         }
     }
@@ -154,9 +176,11 @@ const perl = struct {
     fn resolve(name: []const u8) BasicPalette {
         if (std.mem.endsWith(u8, name, "_[k]")) {
             return .orange;
-        } else if (std.mem.indexOf(u8, name, "Perl") != null or std.mem.indexOf(u8, name, ".pl") != null) {
+        } else if (std.mem.find(u8, name, "Perl") != null) {
             return .green;
-        } else if (std.mem.indexOf(u8, name, "::") != null) {
+        } else if (std.mem.find(u8, name, ".pl") != null) {
+            return .green;
+        } else if (std.mem.find(u8, name, "::") != null) {
             return .yellow;
         } else {
             return .red;
@@ -167,13 +191,13 @@ const perl = struct {
 const python = struct {
     fn resolve(name: []const u8) BasicPalette {
         // Check for site-packages.
-        if (std.mem.indexOf(u8, name, "site-packages") != null) {
+        if (std.mem.find(u8, name, "site-packages") != null) {
             return .aqua;
         }
 
         // Check for python stdlib paths.
-        if (std.mem.indexOf(u8, name, "python") != null or
-            std.mem.indexOf(u8, name, "Python") != null or
+        if (std.mem.find(u8, name, "python") != null or
+            std.mem.find(u8, name, "Python") != null or
             std.mem.startsWith(u8, name, "<built-in") or
             std.mem.startsWith(u8, name, "<method") or
             std.mem.startsWith(u8, name, "<frozen"))
@@ -192,19 +216,19 @@ const js = struct {
         } else if (std.mem.endsWith(u8, name, "_[k]")) {
             return .orange;
         } else if (std.mem.endsWith(u8, name, "_[j]")) {
-            if (std.mem.indexOf(u8, name, "/") != null) {
+            if (std.mem.find(u8, name, "/") != null) {
                 return .green;
             } else {
                 return .aqua;
             }
-        } else if (std.mem.indexOf(u8, name, "::") != null) {
+        } else if (std.mem.find(u8, name, "::") != null) {
             return .yellow;
-        } else if (std.mem.indexOf(u8, name, ":") != null) {
+        } else if (std.mem.find(u8, name, ":") != null) {
             return .aqua;
-        } else if (std.mem.indexOf(u8, name, "/")) |slash_idx| {
-            if (std.mem.indexOf(u8, name[slash_idx..], "node_modules/") != null) {
+        } else if (std.mem.find(u8, name, "/")) |slash_idx| {
+            if (std.mem.find(u8, name[slash_idx..], "node_modules/") != null) {
                 return .purple;
-            } else if (std.mem.indexOf(u8, name[slash_idx..], ".js") != null) {
+            } else if (std.mem.find(u8, name[slash_idx..], ".js") != null) {
                 return .green;
             }
         }
@@ -215,7 +239,7 @@ const js = struct {
 
 const rust = struct {
     fn resolve(name: []const u8) BasicPalette {
-        const func_name = if (std.mem.indexOf(u8, name, "`")) |backtick|
+        const func_name = if (std.mem.find(u8, name, "`")) |backtick|
             name[backtick + 1 ..]
         else
             name;
@@ -223,14 +247,13 @@ const rust = struct {
         if (std.mem.startsWith(u8, func_name, "core::") or
             std.mem.startsWith(u8, func_name, "std::") or
             std.mem.startsWith(u8, func_name, "alloc::") or
-            (std.mem.startsWith(u8, func_name, "<core::") and
-                !std.mem.startsWith(u8, func_name, "<core::future::from_generator::GenFuture<T>")) or
+            (std.mem.startsWith(u8, func_name, "<core::") and !is_rust_gen_future(func_name)) or
             std.mem.startsWith(u8, func_name, "<std::") or
             std.mem.startsWith(u8, func_name, "<alloc::"))
         {
             // Rust system functions.
             return .orange;
-        } else if (std.mem.indexOf(u8, func_name, "::") != null) {
+        } else if (std.mem.find(u8, func_name, "::") != null) {
             // Rust user functions.
             return .aqua;
         } else {
@@ -239,6 +262,14 @@ const rust = struct {
         }
     }
 };
+
+fn is_rust_gen_future(function_name: []const u8) bool {
+    return std.mem.startsWith(
+        u8,
+        function_name,
+        "<core::future::from_generator::GenFuture<T>",
+    );
+}
 
 const wakeup = struct {
     fn resolve(_: []const u8) BasicPalette {
@@ -303,7 +334,7 @@ fn namehash(name: []const u8) f32 {
 
         // Find position after first backtick.
         var after_backtick = name;
-        if (std.mem.indexOf(u8, name, "`")) |backtick_pos| {
+        if (std.mem.find(u8, name, "`")) |backtick_pos| {
             if (backtick_pos + 1 < name.len) {
                 after_backtick = name[backtick_pos + 1 ..];
             }
@@ -316,6 +347,64 @@ fn namehash(name: []const u8) f32 {
     }
 
     return namehash_variables.result();
+}
+
+fn namehash_reverse(name: []const u8) f32 {
+    var namehash_variables = NamehashVariables{};
+    var module_name_found = false;
+
+    if (name.len == 0) return namehash_variables.result();
+
+    namehash_variables.update(reverse_char(name, 0));
+
+    var chars_processed: usize = 0;
+    while (chars_processed < 2 and chars_processed + 1 < name.len) {
+        const character = reverse_char(name, chars_processed + 1);
+        if (character == '`') {
+            module_name_found = true;
+            break;
+        }
+
+        namehash_variables.update(character);
+        chars_processed += 1;
+    }
+
+    if (!module_name_found) {
+        var index = chars_processed + 1;
+        while (index < name.len) : (index += 1) {
+            if (reverse_char(name, index) == '`') {
+                module_name_found = true;
+                break;
+            }
+        }
+    }
+
+    if (module_name_found) {
+        namehash_variables = NamehashVariables{};
+
+        var start_index: usize = 0;
+        var backtick_index: usize = 0;
+        while (backtick_index < name.len) : (backtick_index += 1) {
+            if (reverse_char(name, backtick_index) == '`') {
+                if (backtick_index + 1 < name.len) {
+                    start_index = backtick_index + 1;
+                }
+                break;
+            }
+        }
+
+        var index: usize = 0;
+        while (index < 3 and start_index + index < name.len) : (index += 1) {
+            namehash_variables.update(reverse_char(name, start_index + index));
+        }
+    }
+
+    return namehash_variables.result();
+}
+
+fn reverse_char(name: []const u8, index: usize) u8 {
+    assert(index < name.len);
+    return name[name.len - 1 - index];
 }
 
 // Color calculation macro helpers.
@@ -368,25 +457,15 @@ pub fn color(
                 hash_val ^= @as(u64, byte);
                 hash_val = hash_val *% 0x100000001b3;
             }
-            break :blk @as(f32, @floatCast(@as(f64, @floatFromInt(hash_val)) / @as(f64, @floatFromInt(std.math.maxInt(u64)))));
+            const hash_float = @as(f64, @floatFromInt(hash_val));
+            const max_float = @as(f64, @floatFromInt(std.math.maxInt(u64)));
+            break :blk @as(f32, @floatCast(hash_float / max_float));
         } else {
             break :blk rng_fn();
         }
     };
 
-    const v2: f32 = if (hash) blk: {
-        // Reverse hash for second component.
-        var reversed = std.ArrayList(u8).init(std.heap.page_allocator);
-        defer reversed.deinit();
-
-        var i = name.len;
-        while (i > 0) {
-            i -= 1;
-            reversed.append(name[i]) catch break :blk v1;
-        }
-
-        break :blk namehash(reversed.items);
-    } else if (deterministic) v1 else rng_fn();
+    const v2: f32 = if (hash) namehash_reverse(name) else if (deterministic) v1 else rng_fn();
 
     const v3: f32 = if (hash) v2 else if (deterministic) v1 else rng_fn();
 
@@ -399,11 +478,13 @@ pub fn color_scale(value: isize, max: usize) Color {
         return Color.init(250, 250, 250);
     } else if (value > 0) {
         // Positive value (more samples) = red hue.
-        const c = 100 + @as(u8, @intCast((150 * (@as(isize, @intCast(max)) - value)) / @as(isize, @intCast(max))));
+        const max_isize = @as(isize, @intCast(max));
+        const c = 100 + @as(u8, @intCast((150 * (max_isize - value)) / max_isize));
         return Color.init(255, c, c);
     } else {
         // Negative value (fewer samples) = blue hue.
-        const c = 100 + @as(u8, @intCast((150 * (@as(isize, @intCast(max)) + value)) / @as(isize, @intCast(max))));
+        const max_isize = @as(isize, @intCast(max));
+        const c = 100 + @as(u8, @intCast((150 * (max_isize + value)) / max_isize));
         return Color.init(c, c, 255);
     }
 }
@@ -425,7 +506,10 @@ fn default_bg_color_for(palette: Palette) BackgroundColor {
 }
 
 // Background color gradient getter.
-pub fn bgcolor_for(bgcolor: ?BackgroundColor, palette: Palette) struct { first: []const u8, second: []const u8 } {
+pub fn bgcolor_for(
+    bgcolor: ?BackgroundColor,
+    palette: Palette,
+) struct { first: []const u8, second: []const u8 } {
     const bg = bgcolor orelse default_bg_color_for(palette);
 
     return switch (bg) {
@@ -461,7 +545,7 @@ pub fn parse_hex_color(s: []const u8) ?Color {
     return Color.init(r, g, b);
 }
 
-// Tests
+// Tests.
 const testing = std.testing;
 
 fn dummy_rng() f32 {

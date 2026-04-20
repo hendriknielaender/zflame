@@ -1,6 +1,7 @@
 // Basic tests for all collapse parsers.
 
 const std = @import("std");
+const Io = std.Io;
 const testing = std.testing;
 
 // Import all collapse modules.
@@ -22,13 +23,8 @@ test "perf basic functionality" {
         "            56203912789e func2+0xe (/workspaces/boa/target/debug/boa_cli)\n" ++
         "\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    try folder.collapse(input_stream.reader(), output_stream.writer());
-
-    const result = output_stream.getWritten();
+    const result = try collapse_to_buffer(&folder, input, &output_buffer);
     try testing.expect(result.len > 0);
 }
 
@@ -46,13 +42,8 @@ test "dtrace basic functionality" {
         "                5\n" ++
         "\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    try folder.collapse(input_stream.reader(), output_stream.writer());
-
-    const result = output_stream.getWritten();
+    const result = try collapse_to_buffer(&folder, input, &output_buffer);
     try testing.expect(result.len > 0);
 }
 
@@ -68,13 +59,8 @@ test "sample basic functionality" {
         "    +   100 work_function  (in myapp)\n" ++
         "Total number in stack: 100\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    try folder.collapse(input_stream.reader(), output_stream.writer());
-
-    const result = output_stream.getWritten();
+    const result = try collapse_to_buffer(&folder, input, &output_buffer);
     try testing.expect(result.len > 0);
 }
 
@@ -88,13 +74,8 @@ test "vtune basic functionality" {
         " worker_func,0.300,myapp\n" ++
         "  inner_func,0.200,myapp\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    try folder.collapse(input_stream.reader(), output_stream.writer());
-
-    const result = output_stream.getWritten();
+    const result = try collapse_to_buffer(&folder, input, &output_buffer);
     try testing.expect(result.len > 0);
 }
 
@@ -115,13 +96,8 @@ test "xctrace basic functionality" {
         "</node>\n" ++
         "</trace-query-result>\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    try folder.collapse(input_stream.reader(), output_stream.writer());
-
-    const result = output_stream.getWritten();
+    const result = try collapse_to_buffer(&folder, input, &output_buffer);
     try testing.expect(result.len > 0);
 }
 
@@ -134,13 +110,8 @@ test "recursive basic functionality" {
         "main;worker;inner 5\n" ++
         "main;func;func;other 3\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    try folder.collapse(input_stream.reader(), output_stream.writer());
-
-    const result = output_stream.getWritten();
+    const result = try collapse_to_buffer(&folder, input, &output_buffer);
     try testing.expect(result.len > 0);
 }
 
@@ -150,16 +121,24 @@ test "guess basic functionality" {
 
     const input =
         "boa_cli 12937 10360.271071:   10101010 cpu-clock:uhH: \n" ++
-        "            562039122f0f <std::collections::hash::map::HashMap<K,V> as gc::trace::Trace>::trace+0xbf (/workspaces/boa/target/debug/boa_cli)\n" ++
-        "            56203912789e <alloc::boxed::Box<T> as gc::trace::Trace>::trace::mark+0xe (/workspaces/boa/target/debug/boa_cli)\n" ++
+        "            562039122f0f " ++
+        "<std::collections::hash::map::HashMap<K,V> as gc::trace::Trace>" ++
+        "::trace+0xbf (/workspaces/boa/target/debug/boa_cli)\n" ++
+        "            56203912789e " ++
+        "<alloc::boxed::Box<T> as gc::trace::Trace>" ++
+        "::trace::mark+0xe (/workspaces/boa/target/debug/boa_cli)\n" ++
         "\n";
 
-    var input_stream = std.io.fixedBufferStream(input);
     var output_buffer: [4096]u8 = undefined;
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    try folder.collapse(input_stream.reader(), output_stream.writer());
-
-    const result = output_stream.getWritten();
+    const result = try collapse_to_buffer(&folder, input, &output_buffer);
     try testing.expect(result.len > 0);
+}
+
+fn collapse_to_buffer(folder: anytype, input: []const u8, output_buffer: []u8) ![]const u8 {
+    var input_reader: Io.Reader = .fixed(input);
+    var output_writer: Io.Writer = .fixed(output_buffer);
+
+    try folder.collapse(&input_reader, &output_writer);
+
+    return output_writer.buffered();
 }

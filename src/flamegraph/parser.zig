@@ -14,7 +14,11 @@ pub const CollapsedStack = struct {
 };
 
 pub const Parser = struct {
-    parse_to_buffer: *const fn (allocator: *std.mem.Allocator, input_data: []const u8, output_buffer: []CollapsedStack) []CollapsedStack,
+    parse_to_buffer: *const fn (
+        allocator: *std.mem.Allocator,
+        input_data: []const u8,
+        output_buffer: []CollapsedStack,
+    ) []CollapsedStack,
     get_parser_name: *const fn () []const u8,
 
     fn validate(self: Parser) void {

@@ -115,7 +115,7 @@ const Frame = struct {
         const copy_len = @min(name.len, MAX_FRAME_NAME_LENGTH - 1);
         @memcpy(self.name[0..copy_len], name[0..copy_len]);
         self.name_len = copy_len;
-        // Ensure null termination if there's space
+        // Ensure null termination when there is room for the sentinel byte.
         if (copy_len < MAX_FRAME_NAME_LENGTH) {
             self.name[copy_len] = 0;
         }
@@ -134,14 +134,14 @@ const Frame = struct {
     }
 };
 
-// Frame pool for memory management without allocation
+// Frame pool for memory management without allocation.
 const FramePool = struct {
     frames: [MAX_FRAMES_COUNT]Frame,
     next_free: usize,
 
     pub fn init() FramePool {
         return FramePool{
-            .frames = undefined, // Don't initialize until needed
+            .frames = undefined, // Initialized on allocation.
             .next_free = 0,
         };
     }
@@ -151,7 +151,7 @@ const FramePool = struct {
             return error.OutOfMemory;
         }
         const index = self.next_free;
-        self.frames[index] = Frame.init(); // Initialize on allocation
+        self.frames[index] = Frame.init();
         self.frames[index].used = true;
         self.next_free += 1;
         return index;
@@ -163,7 +163,7 @@ const FramePool = struct {
     }
 
     pub fn reset(self: *FramePool) void {
-        // No need to reset all frames, just reset the counter
+        // Reusing initialized frames is safe because allocation overwrites each frame.
         self.next_free = 0;
     }
 };
@@ -200,7 +200,7 @@ pub const Generator = struct {
             stack.validate();
         }
 
-        // Reset frame pool
+        // Reset the frame pool before rebuilding the tree.
         self.frame_pool.reset();
         self.total_samples = 0;
         self.max_depth = 0;
@@ -208,8 +208,8 @@ pub const Generator = struct {
         // Build frame tree from collapsed stacks.
         const root_index = try self.build_frame_tree(collapsed_stacks);
 
-        assert(self.total_samples > 0); // postcondition after building tree
-        assert(self.max_depth > 0); // postcondition after building tree
+        assert(self.total_samples > 0); // Postcondition after building tree.
+        assert(self.max_depth > 0); // Postcondition after building tree.
 
         // Calculate layout.
         try self.calculate_layout(root_index);
@@ -230,13 +230,15 @@ pub const Generator = struct {
         for (collapsed_stacks) |collapsed_stack| {
             collapsed_stack.validate();
 
-            const adjusted_value = @as(u64, @intFromFloat(@as(f64, @floatFromInt(collapsed_stack.count)) * self.options.factor));
+            const scaled_value =
+                @as(f64, @floatFromInt(collapsed_stack.count)) * self.options.factor;
+            const adjusted_value = @as(u64, @intFromFloat(scaled_value));
             self.total_samples += adjusted_value;
 
             try self.add_stack_to_tree(root_index, collapsed_stack.stack, adjusted_value);
         }
 
-        // Propagate values up the tree so parent nodes have sum of children
+        // Propagate values up the tree so parent nodes hold child sums.
         self.propagate_values(root_index);
 
         return root_index;
@@ -292,13 +294,13 @@ pub const Generator = struct {
     fn propagate_values(self: *Generator, frame_index: usize) void {
         const frame = self.frame_pool.get(frame_index);
 
-        // First, recursively propagate values for all children
+        // Propagate child values before reading the parent sum.
         for (0..frame.children_count) |i| {
             const child_index = frame.children_indices[i];
             self.propagate_values(child_index);
         }
 
-        // If this frame has children, set its value to the sum of children's values
+        // Parent frame values are exactly the sum of their children.
         if (frame.children_count > 0) {
             var total_value: u64 = 0;
             for (0..frame.children_count) |i| {
@@ -308,17 +310,18 @@ pub const Generator = struct {
             }
             frame.value = total_value;
         }
-        // If no children, the value was already set by add_stack_to_tree
+        // Leaf values were already set by add_stack_to_tree().
     }
 
     fn calculate_layout(self: *Generator, root_index: usize) !void {
         const root = self.frame_pool.get(root_index);
         const height = @as(f64, @floatFromInt(self.options.frame_height));
-        const total_height = (self.max_depth + 2) * self.options.frame_height + 100; // Extra space for title
+        const title_height = 100;
+        const total_height = (self.max_depth + 2) * self.options.frame_height + title_height;
         const ypad1 = self.calculate_ypad1();
         const ypad2 = self.calculate_ypad2();
 
-        // Set root frame dimensions using percentage-based width (like inferno)
+        // Use percentage-based root width so SVGs can scale like inferno.
         root.x = 0.0;
         root.y = if (self.options.direction == .inverted)
             @as(f64, @floatFromInt(ypad1))
@@ -332,7 +335,14 @@ pub const Generator = struct {
         try self.calculate_children_layout(root_index, 0, total_height, ypad1, ypad2);
     }
 
-    fn calculate_children_layout(self: *Generator, frame_index: usize, depth: u32, total_height: u32, ypad1: u32, ypad2: u32) !void {
+    fn calculate_children_layout(
+        self: *Generator,
+        frame_index: usize,
+        depth: u32,
+        total_height: u32,
+        ypad1: u32,
+        ypad2: u32,
+    ) !void {
         const frame = self.frame_pool.get(frame_index);
         if (frame.children_count == 0) return;
 
@@ -344,24 +354,32 @@ pub const Generator = struct {
             const child = self.frame_pool.get(child_index);
 
             if (child.value == 0) continue;
-            if (frame.value == 0) continue; // Prevent division by zero
+            if (frame.value == 0) continue; // Prevent division by zero.
 
-            // Calculate width as percentage of total samples
-            const child_width_pct = (frame.width * @as(f64, @floatFromInt(child.value))) / @as(f64, @floatFromInt(frame.value));
+            // Calculate width as a percentage of total samples.
+            const child_samples = @as(f64, @floatFromInt(child.value));
+            const frame_samples = @as(f64, @floatFromInt(frame.value));
+            const child_width_pct = (frame.width * child_samples) / frame_samples;
 
-            // Convert percentage to actual pixels for min width check
-            const image_width = if (self.options.image_width) |w| @as(f64, @floatFromInt(w)) else @as(f64, @floatFromInt(DEFAULT_WIDTH));
+            // Convert percentage to actual pixels for min width check.
+            const image_width = if (self.options.image_width) |w|
+                @as(f64, @floatFromInt(w))
+            else
+                @as(f64, @floatFromInt(DEFAULT_WIDTH));
             const child_width_pixels = (child_width_pct / 100.0) * image_width;
 
             if (child_width_pixels < self.options.min_width) continue;
 
             child.x = x_offset_pct;
 
-            // Calculate Y position using inferno's method
+            // Match inferno's vertical positioning method.
             child.y = if (self.options.direction == .inverted)
                 @as(f64, @floatFromInt(ypad1 + (depth + 1) * self.options.frame_height))
             else
-                @as(f64, @floatFromInt(total_height - ypad2 - ((depth + 2) * self.options.frame_height)));
+                @as(
+                    f64,
+                    @floatFromInt(total_height - ypad2 - ((depth + 2) * self.options.frame_height)),
+                );
 
             child.width = child_width_pct;
             child.height = child_height;
@@ -398,7 +416,7 @@ pub const Generator = struct {
 
         if (name.len == 0) return "#d0d0d0";
 
-        // Use simple hash for color selection
+        // Use a simple hash for color selection.
         var hash: u32 = 0;
         for (name) |c| {
             hash = hash *% 31 +% c;
@@ -416,7 +434,8 @@ pub const Generator = struct {
 
     fn write_svg(self: *Generator, root_index: usize, writer: anytype) !void {
         const width = if (self.options.image_width) |w| w else DEFAULT_WIDTH;
-        const total_height = (self.max_depth + 2) * self.options.frame_height + 100; // Extra space for title
+        const title_height = 100;
+        const total_height = (self.max_depth + 2) * self.options.frame_height + title_height;
 
         // Write SVG header.
         try self.write_svg_header(writer, width, total_height);
@@ -427,14 +446,17 @@ pub const Generator = struct {
         // Write title and subtitle.
         try self.write_svg_title(writer, width);
 
-        // Write frames container with total_samples attribute
+        // Write the frames container with the total_samples attribute.
         const xpad = 10;
-        try writer.print("<svg id=\"frames\" x=\"{d}\" width=\"{d}\" total_samples=\"{d}\">\n", .{ xpad, width - (xpad * 2), self.total_samples });
+        try writer.print(
+            "<svg id=\"frames\" x=\"{d}\" width=\"{d}\" total_samples=\"{d}\">\n",
+            .{ xpad, width - (xpad * 2), self.total_samples },
+        );
 
         // Write frames recursively.
         try self.write_frame_recursive(writer, root_index);
 
-        // Close frames container
+        // Close the frames container.
         try writer.print("</svg>\n", .{});
 
         // Write SVG footer.
@@ -444,12 +466,19 @@ pub const Generator = struct {
     fn write_svg_header(self: *Generator, writer: anytype, width: u32, height: u32) !void {
         _ = self;
 
+        try writer.print("<?xml version=\"1.0\" standalone=\"no\"?>\n", .{});
         try writer.print(
-            \\<?xml version="1.0" standalone="no"?>
-            \\<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-            \\<svg version="1.1" width="{d}" height="{d}" onload="init(evt)" viewBox="0 0 {d} {d}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno">
-            \\
-        , .{ width, height, width, height });
+            "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" " ++
+                "\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n",
+            .{},
+        );
+        try writer.print(
+            "<svg version=\"1.1\" width=\"{d}\" height=\"{d}\" onload=\"init(evt)\" " ++
+                "viewBox=\"0 0 {d} {d}\" xmlns=\"http://www.w3.org/2000/svg\" " ++
+                "xmlns:xlink=\"http://www.w3.org/1999/xlink\" " ++
+                "xmlns:fg=\"http://github.com/jonhoo/inferno\">\n",
+            .{ width, height, width, height },
+        );
     }
 
     fn write_svg_styles(self: *Generator, writer: anytype) !void {
@@ -478,38 +507,35 @@ pub const Generator = struct {
     fn write_svg_title(self: *Generator, writer: anytype, width: u32) !void {
         const title_y = self.options.font_size + 10;
 
-        // Title
-        try writer.print("<text id=\"title\" x=\"50%\" y=\"{d}\" class=\"title\" text-anchor=\"middle\">{s}</text>\n", .{ title_y, self.options.title });
+        // Write the title.
+        try writer.print(
+            "<text id=\"title\" x=\"50%\" y=\"{d}\" class=\"title\" " ++
+                "text-anchor=\"middle\">{s}</text>\n",
+            .{ title_y, self.options.title },
+        );
 
         if (self.options.subtitle) |subtitle| {
             const subtitle_y = title_y + self.options.font_size + 5;
-            try writer.print("<text x=\"50%\" y=\"{d}\" class=\"subtitle\" text-anchor=\"middle\">{s}</text>\n", .{ subtitle_y, subtitle });
+            try writer.print(
+                "<text x=\"50%\" y=\"{d}\" class=\"subtitle\" " ++
+                    "text-anchor=\"middle\">{s}</text>\n",
+                .{ subtitle_y, subtitle },
+            );
         }
 
-        _ = width; // suppress unused warning
+        _ = width; // Suppress unused warning.
     }
 
     fn write_frame_recursive(self: *Generator, writer: anytype, frame_index: usize) !void {
         const frame = self.frame_pool.get(frame_index);
 
-        // Convert percentage width to pixels for min width check
-        const image_width = if (self.options.image_width) |w| @as(f64, @floatFromInt(w)) else @as(f64, @floatFromInt(DEFAULT_WIDTH));
+        const image_width = self.image_width_pixels();
         const frame_width_pixels = (frame.width / 100.0) * image_width;
         if (frame_width_pixels < self.options.min_width) return;
 
-        // Write frame rectangle
         const frame_name = frame.get_name();
-        // Clean up the name for display - remove null characters and trim whitespace
         var clean_name_buf: [128]u8 = undefined;
-        var clean_len: usize = 0;
-        for (frame_name) |c| {
-            if (c != 0 and clean_len < clean_name_buf.len - 1) {
-                clean_name_buf[clean_len] = c;
-                clean_len += 1;
-            }
-        }
-        const clean_name = std.mem.trim(u8, clean_name_buf[0..clean_len], " \t\r\n");
-        const safe_name = if (clean_name.len > 0) clean_name else "[unknown]";
+        const safe_name = clean_frame_name(frame_name, &clean_name_buf);
 
         try writer.print(
             \\<g class="func_g">
@@ -527,44 +553,83 @@ pub const Generator = struct {
             frame.color,
         });
 
-        // Write frame text if there's room.
-        const text_width_pixels = (frame.width / 100.0) * image_width - 6.0; // Padding
-        if (text_width_pixels > @as(f64, @floatFromInt(self.options.font_size))) {
-            const text_x_pct = frame.x + (3.0 / image_width * 100.0); // Convert 3px padding to percentage
-            const text_y = frame.y + @as(f64, @floatFromInt(self.options.frame_height)) / 2.0 + @as(f64, @floatFromInt(self.options.font_size)) / 3.0;
-
-            // Only write text if name is not empty and contains non-whitespace characters
-            if (frame_name.len > 0) {
-                var has_content = false;
-                for (frame_name) |c| {
-                    if (!std.ascii.isWhitespace(c) and c != 0) {
-                        has_content = true;
-                        break;
-                    }
-                }
-                if (has_content) {
-                    try writer.print("<text x=\"{d:.4}%\" y=\"{d:.1}\" class=\"func_text\">{s}</text>\n", .{ text_x_pct, text_y, frame_name });
-                }
-            }
-        }
-
+        try self.write_frame_text(writer, frame, image_width, frame_name);
         try writer.print("</g>\n", .{});
 
-        // Write children.
         for (0..frame.children_count) |i| {
             const child_index = frame.children_indices[i];
             try self.write_frame_recursive(writer, child_index);
         }
     }
+
+    fn image_width_pixels(self: *const Generator) f64 {
+        return if (self.options.image_width) |width|
+            @as(f64, @floatFromInt(width))
+        else
+            @as(f64, @floatFromInt(DEFAULT_WIDTH));
+    }
+
+    fn clean_frame_name(frame_name: []const u8, buffer: *[128]u8) []const u8 {
+        var clean_len: usize = 0;
+        for (frame_name) |c| {
+            if (c != 0 and clean_len < buffer.len - 1) {
+                buffer[clean_len] = c;
+                clean_len += 1;
+            }
+        }
+
+        const clean_name = std.mem.trim(u8, buffer[0..clean_len], " \t\r\n");
+        return if (clean_name.len > 0) clean_name else "[unknown]";
+    }
+
+    fn write_frame_text(
+        self: *const Generator,
+        writer: anytype,
+        frame: *const Frame,
+        image_width: f64,
+        frame_name: []const u8,
+    ) !void {
+        const text_padding_pixels = 6.0;
+        const text_width_pixels = (frame.width / 100.0) * image_width - text_padding_pixels;
+        if (text_width_pixels > @as(f64, @floatFromInt(self.options.font_size))) {
+            const text_padding_pct = 3.0 / image_width * 100.0;
+            const text_x_pct = frame.x + text_padding_pct;
+            const text_y = frame.y +
+                @as(f64, @floatFromInt(self.options.frame_height)) / 2.0 +
+                @as(f64, @floatFromInt(self.options.font_size)) / 3.0;
+
+            if (frame_name_has_content(frame_name)) {
+                try writer.print(
+                    "<text x=\"{d:.4}%\" y=\"{d:.1}\" " ++
+                        "class=\"func_text\">{s}</text>\n",
+                    .{ text_x_pct, text_y, frame_name },
+                );
+            }
+        }
+    }
+
+    fn frame_name_has_content(frame_name: []const u8) bool {
+        for (frame_name) |c| {
+            if (!std.ascii.isWhitespace(c) and c != 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 };
 
-// Tests
+// Tests.
 const testing = std.testing;
 
 test "color palette from string" {
-    try testing.expect(ColorPalette.from_string("hot") == .hot);
-    try testing.expect(ColorPalette.from_string("mem") == .mem);
-    try testing.expect(ColorPalette.from_string("invalid") == null);
+    const hot_palette = try ColorPalette.from_string("hot");
+    try testing.expectEqual(ColorPalette{ .basic = .hot }, hot_palette);
+
+    const mem_palette = try ColorPalette.from_string("mem");
+    try testing.expectEqual(ColorPalette{ .basic = .mem }, mem_palette);
+
+    try testing.expectError(error.UnknownPalette, ColorPalette.from_string("invalid"));
 }
 
 test "options validation" {

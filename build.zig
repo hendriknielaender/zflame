@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_diff_module,
     });
 
-    // Add zBench dependency
+    // Add the zBench dependency.
     const zbench_dep = b.dependency("zbench", .{
         .target = target,
         .optimize = optimize,
@@ -41,15 +41,14 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     run_diff_cmd.step.dependOn(b.getInstallStep());
 
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
+    // Forward build arguments to the selected run command.
     if (b.args) |args| {
         run_cmd.addArgs(args);
         run_diff_cmd.addArgs(args);
     }
 
     // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
+    // and can be selected like this: `zig build run`.
     // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
@@ -64,6 +63,7 @@ pub fn build(b: *std.Build) void {
 
     // Test files for all collapse parsers.
     const test_files = [_][]const u8{
+        "src/diff_folded.zig",
         "src/test_collapse.zig",
     };
 
@@ -87,12 +87,12 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 
-    // Create module for zflame library
+    // Create the zflame library module.
     const zflame_module = b.addModule("zflame", .{
         .root_source_file = b.path("src/main.zig"),
     });
 
-    // Benchmark executables
+    // Create benchmark executables.
     const bench_collapse_module = b.createModule(.{
         .root_source_file = b.path("benchmarks/collapse.zig"),
         .target = target,

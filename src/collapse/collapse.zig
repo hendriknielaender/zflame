@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Io = std.Io;
 
 const MAX_OCCURRENCES_CAPACITY = 1024;
 const MAX_STACK_LENGTH = 2048;
@@ -43,7 +44,7 @@ pub const Occurrences = struct {
     }
 
     pub fn deinit(self: *Occurrences) void {
-        // No dynamic memory to free
+        // No dynamic memory is owned by the map.
         _ = self;
     }
 
@@ -53,7 +54,7 @@ pub const Occurrences = struct {
         assert(stack.len <= MAX_STACK_LENGTH);
         assert(stack_count > 0);
 
-        // Find existing entry
+        // Reuse an existing entry when the stack was already observed.
         for (&self.entries) |*entry| {
             if (entry.used and entry.stack_len == stack.len and
                 std.mem.eql(u8, entry.stack[0..entry.stack_len], stack))
@@ -63,7 +64,7 @@ pub const Occurrences = struct {
             }
         }
 
-        // Find empty slot
+        // Insert into the first empty slot.
         for (&self.entries) |*entry| {
             if (!entry.used) {
                 entry.used = true;
@@ -75,7 +76,7 @@ pub const Occurrences = struct {
             }
         }
 
-        return error.OutOfMemory; // No more space
+        return error.OutOfMemory; // No more space.
     }
 
     pub fn get(self: *const Occurrences, stack: []const u8) ?u64 {
@@ -105,9 +106,8 @@ pub const Occurrences = struct {
                 const entry = &self.occurrences.entries[self.index];
                 self.index += 1;
                 if (entry.used) {
-                    // Note: This is a hack since we can't return mutable references to our arrays
-                    // For iteration purposes, we'll need a different approach
-                    return null; // Will need to handle this differently
+                    // The fixed arrays do not provide stable mutable references for iteration.
+                    return null;
                 }
             }
             return null;
@@ -121,7 +121,7 @@ pub const Occurrences = struct {
         };
     }
 
-    // Helper method to iterate without returning mutable references
+    // Iterate without returning mutable references into fixed storage.
     pub fn for_each(self: *const Occurrences, comptime func: fn ([]const u8, u64) void) void {
         for (&self.entries) |*entry| {
             if (entry.used) {
@@ -130,7 +130,7 @@ pub const Occurrences = struct {
         }
     }
 
-    // Helper method for writing output
+    // Write all stored occurrences in folded stack format.
     pub fn write_to(self: *const Occurrences, writer: anytype) !void {
         for (&self.entries) |*entry| {
             if (entry.used) {
@@ -145,8 +145,8 @@ pub const Collapse = struct {
     // Function pointer for collapsing implementation.
     collapse_fn: *const fn (
         self: *anyopaque,
-        reader: anytype,
-        writer: anytype,
+        reader: *Io.Reader,
+        writer: *Io.Writer,
     ) anyerror!void,
 
     // Function pointer to check if format is applicable.
@@ -160,8 +160,8 @@ pub const Collapse = struct {
 
     pub fn collapse(
         self: *Collapse,
-        reader: anytype,
-        writer: anytype,
+        reader: *Io.Reader,
+        writer: *Io.Writer,
     ) !void {
         return self.collapse_fn(self.impl, reader, writer);
     }
@@ -176,8 +176,8 @@ pub fn create_collapse(comptime T: type, impl: *T) Collapse {
     const gen = struct {
         fn collapse_wrapper(
             ptr: *anyopaque,
-            reader: anytype,
-            writer: anytype,
+            reader: *Io.Reader,
+            writer: *Io.Writer,
         ) anyerror!void {
             const self = @as(*T, @ptrCast(@alignCast(ptr)));
             return T.collapse(self, reader, writer);
@@ -233,7 +233,7 @@ pub const common = struct {
     }
 };
 
-// Tests
+// Tests.
 const testing = std.testing;
 
 test "occurrences map" {
