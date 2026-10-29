@@ -69,24 +69,20 @@ pub const Folder = struct {
     pub fn init(options: Options) !Folder {
         var folder = Folder{
             .options = options,
-            .event_filter_storage = [_]u8{0} ** 256,
+            .event_filter_storage = @splat(0),
             .event_filter_len = 0,
             .in_event = false,
-            .current_comm = [_]u8{0} ** MAX_PROCESS_NAME_LENGTH,
+            .current_comm = @splat(0),
             .current_comm_len = 0,
-            .current_stack = [_]u8{0} ** MAX_LINE_LENGTH,
+            .current_stack = @splat(0),
             .current_stack_len = 0,
             .current_count = 0,
             .stack_filter = .keep,
-            .cache_keys = [_][MAX_FUNCTION_NAME_LENGTH]u8{
-                [_]u8{0} ** MAX_FUNCTION_NAME_LENGTH,
-            } ** MAX_CACHE_ENTRIES,
-            .cache_values = [_][MAX_FUNCTION_NAME_LENGTH]u8{
-                [_]u8{0} ** MAX_FUNCTION_NAME_LENGTH,
-            } ** MAX_CACHE_ENTRIES,
-            .cache_key_lens = [_]usize{0} ** MAX_CACHE_ENTRIES,
-            .cache_value_lens = [_]usize{0} ** MAX_CACHE_ENTRIES,
-            .cache_used = [_]bool{false} ** MAX_CACHE_ENTRIES,
+            .cache_keys = @splat(@splat(0)),
+            .cache_values = @splat(@splat(0)),
+            .cache_key_lens = @splat(0),
+            .cache_value_lens = @splat(0),
+            .cache_used = @splat(false),
             .cache_count = 0,
         };
 

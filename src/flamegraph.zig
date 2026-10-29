@@ -97,7 +97,7 @@ const Frame = struct {
 
     pub fn init() Frame {
         return Frame{
-            .name = [_]u8{0} ** MAX_FRAME_NAME_LENGTH,
+            .name = @splat(0),
             .name_len = 0,
             .value = 0,
             .x = 0.0,
@@ -105,7 +105,7 @@ const Frame = struct {
             .width = 0.0,
             .height = 0.0,
             .color = "#000000",
-            .children_indices = [_]usize{0} ** 32,
+            .children_indices = @splat(0),
             .children_count = 0,
             .used = false,
         };
