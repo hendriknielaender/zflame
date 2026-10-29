@@ -29,7 +29,7 @@ and address performance bottlenecks in their applications.
 
 ### Requirements
 
-- Zig 0.16.0 or later
+- Zig 0.17.0 or later
 - No external dependencies required
 
 ### Building from Source

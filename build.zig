@@ -42,10 +42,8 @@ pub fn build(b: *std.Build) void {
     run_diff_cmd.step.dependOn(b.getInstallStep());
 
     // Forward build arguments to the selected run command.
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-        run_diff_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
+    run_diff_cmd.addPassthruArgs();
 
     // This creates a build step. It will be visible in the `zig build --help` menu,
     // and can be selected like this: `zig build run`.

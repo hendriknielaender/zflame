@@ -33,12 +33,12 @@ pub const Occurrences = struct {
 
     pub fn init() Occurrences {
         return .{
-            .entries = [_]OccurrenceEntry{.{
-                .stack = [_]u8{0} ** MAX_STACK_LENGTH,
+            .entries = @splat(.{
+                .stack = @splat(0),
                 .stack_len = 0,
                 .count = 0,
                 .used = false,
-            }} ** MAX_OCCURRENCES_CAPACITY,
+            }),
             .count_used = 0,
         };
     }
