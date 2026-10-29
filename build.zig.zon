@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zbench = .{
-            .url = "https://github.com/hendriknielaender/zBench/archive/f12a2262bcd9d300207890555c577da5e29de453.tar.gz",
-            .hash = "zbench-0.14.1-YTdc781OAQCR6wxqkgAwm9bG4TnFGzm8c9aE-ZPiTAU1",
+            .url = "https://github.com/hendriknielaender/zBench/archive/2536041a2de519f0112dcb8884804ad1d64a6611.tar.gz",
+            .hash = "zbench-0.14.1-YTdc77dOAQAARzADUREUrWbDfj-vulGyP2T2kBiJx8JN",
         },
     },
     .paths = .{
